@@ -2,7 +2,6 @@
   // Visit https://aka.ms/tsconfig to read more about this file
   "compilerOptions": {
     // File Layout
-    "rootDir": "./src",
     "outDir": "./dist",
     "module": "ESNext",
     "moduleResolution": "node",
@@ -25,7 +24,6 @@
     // Recommended Options
     "strict": true,
     "jsx": "react-jsx",
-    "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
@@ -33,6 +31,9 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
   },
-  "include": ["src"],
-  "exclude": ["node_modules"]
+  "include": ["src", "server.ts"],
+  "exclude": ["node_modules"],
+  "ts-node": {
+    "esm": true
+  }
 }
