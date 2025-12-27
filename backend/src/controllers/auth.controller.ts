@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { authService } from "../services/auth.service";
 import type { LoginUser, RegisterUser } from "../types/Auth";
+import { SuccessResponse, ErrorResponse, sendResponse } from "../utils/response";
 
 /**
  * Auth Controller
@@ -16,26 +17,27 @@ export class AuthController {
       const data: RegisterUser = req.body;
       
       // Validate required fields
-      if (!data.username || !data.email || !data.password) {
-        res.status(400).json({
-          success: false,
-          message: "Username, email, and password are required"
-        });
-        return;
+      const missingFields: string[] = [];
+      if (!data.username) missingFields.push("username");
+      if (!data.email) missingFields.push("email");
+      if (!data.password) missingFields.push("password");
+      
+      if (missingFields.length > 0) {
+        const response = ErrorResponse.MISSING_FIELDS(missingFields);
+        return sendResponse(res, response);
       }
 
       const result = await authService.register(data);
-      
-      res.status(201).json({
-        success: true,
-        message: "User registered successfully",
-        data: result
-      });
+      const response = SuccessResponse.REGISTER_SUCCESS(result);
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        message: error.message || "Registration failed"
-      });
+      const statusCode = error.statusCode || 400;
+      const response = ErrorResponse.CUSTOM(
+        statusCode,
+        error.message || "Registration failed",
+        error
+      );
+      sendResponse(res, response);
     }
   }
 
@@ -48,26 +50,26 @@ export class AuthController {
       const { email, password }: LoginUser = req.body;
       
       // Validate required fields
-      if (!email || !password) {
-        res.status(400).json({
-          success: false,
-          message: "Email and password are required"
-        });
-        return;
+      const missingFields: string[] = [];
+      if (!email) missingFields.push("email");
+      if (!password) missingFields.push("password");
+      
+      if (missingFields.length > 0) {
+        const response = ErrorResponse.MISSING_FIELDS(missingFields);
+        return sendResponse(res, response);
       }
 
       const result = await authService.login(email, password);
-      
-      res.status(200).json({
-        success: true,
-        message: "Login successful",
-        data: result
-      });
+      const response = SuccessResponse.LOGIN_SUCCESS(result);
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(401).json({
-        success: false,
-        message: error.message || "Login failed"
-      });
+      const statusCode = error.statusCode || 401;
+      const response = ErrorResponse.CUSTOM(
+        statusCode,
+        error.message || "Login failed",
+        error
+      );
+      sendResponse(res, response);
     }
   }
 }

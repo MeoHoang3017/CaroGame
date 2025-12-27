@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { userService } from "../services/user.service";
 import type { UserModel } from "../types/User";
+import { SuccessResponse, ErrorResponse, sendResponse } from "../utils/response";
+import { SYSTEM_MESSAGES } from "../constants/messages";
 
 /**
  * User Controller
@@ -16,33 +18,22 @@ export class UserController {
       const { id } = req.params;
       
       if (!id) {
-        res.status(400).json({
-          success: false,
-          message: "User ID is required"
-        });
-        return;
+        const response = ErrorResponse.MISSING_FIELDS(["id"]);
+        return sendResponse(res, response);
       }
 
       const user = await userService.getUserById(id);
       
       if (!user) {
-        res.status(404).json({
-          success: false,
-          message: "User not found"
-        });
-        return;
+        const response = ErrorResponse.NOT_FOUND("User");
+        return sendResponse(res, response);
       }
 
-      res.status(200).json({
-        success: true,
-        message: "User retrieved successfully",
-        data: user
-      });
+      const response = SuccessResponse.ITEM("User", user);
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to retrieve user"
-      });
+      const response = ErrorResponse.BAD_REQUEST;
+      sendResponse(res, response);
     }
   }
 
@@ -58,24 +49,19 @@ export class UserController {
       const users = await userService.getAllUsers(limit, skip);
       const total = await userService.getUserCount();
 
-      res.status(200).json({
-        success: true,
-        message: "Users retrieved successfully",
-        data: {
-          users,
-          pagination: {
-            total,
-            limit,
-            skip,
-            hasMore: skip + limit < total
-          }
+      const response = SuccessResponse.CUSTOM(200, "Users retrieved successfully", {
+        users,
+        pagination: {
+          total,
+          limit,
+          skip,
+          hasMore: skip + limit < total
         }
       });
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to retrieve users"
-      });
+      const response = ErrorResponse.SERVER_ERROR;
+      sendResponse(res, response);
     }
   }
 
@@ -88,33 +74,22 @@ export class UserController {
       const { email } = req.params;
       
       if (!email) {
-        res.status(400).json({
-          success: false,
-          message: "Email is required"
-        });
-        return;
+        const response = ErrorResponse.MISSING_FIELDS(["email"]);
+        return sendResponse(res, response);
       }
 
       const user = await userService.getUserByEmail(email);
       
       if (!user) {
-        res.status(404).json({
-          success: false,
-          message: "User not found"
-        });
-        return;
+        const response = ErrorResponse.NOT_FOUND("User");
+        return sendResponse(res, response);
       }
 
-      res.status(200).json({
-        success: true,
-        message: "User retrieved successfully",
-        data: user
-      });
+      const response = SuccessResponse.ITEM("User", user);
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to retrieve user"
-      });
+      const response = ErrorResponse.BAD_REQUEST;
+      sendResponse(res, response);
     }
   }
 
@@ -127,33 +102,22 @@ export class UserController {
       const { username } = req.params;
       
       if (!username) {
-        res.status(400).json({
-          success: false,
-          message: "Username is required"
-        });
-        return;
+        const response = ErrorResponse.MISSING_FIELDS(["username"]);
+        return sendResponse(res, response);
       }
 
       const user = await userService.getUserByUsername(username);
       
       if (!user) {
-        res.status(404).json({
-          success: false,
-          message: "User not found"
-        });
-        return;
+        const response = ErrorResponse.NOT_FOUND("User");
+        return sendResponse(res, response);
       }
 
-      res.status(200).json({
-        success: true,
-        message: "User retrieved successfully",
-        data: user
-      });
+      const response = SuccessResponse.ITEM("User", user);
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to retrieve user"
-      });
+      const response = ErrorResponse.BAD_REQUEST;
+      sendResponse(res, response);
     }
   }
 
@@ -166,25 +130,21 @@ export class UserController {
       const { username } = req.body;
       
       if (!username) {
-        res.status(400).json({
-          success: false,
-          message: "Username is required"
-        });
-        return;
+        const response = ErrorResponse.MISSING_FIELDS(["username"]);
+        return sendResponse(res, response);
       }
 
       const guestUser = await userService.createGuestUser(username);
-      
-      res.status(201).json({
-        success: true,
-        message: "Guest user created successfully",
-        data: guestUser
-      });
+      const response = SuccessResponse.CREATED("Guest user", guestUser);
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to create guest user"
-      });
+      const statusCode = error.statusCode || 400;
+      const response = ErrorResponse.CUSTOM(
+        statusCode,
+        error.message || "Failed to create guest user",
+        error
+      );
+      sendResponse(res, response);
     }
   }
 
@@ -198,33 +158,27 @@ export class UserController {
       const updateData: Partial<UserModel> = req.body;
       
       if (!id) {
-        res.status(400).json({
-          success: false,
-          message: "User ID is required"
-        });
-        return;
+        const response = ErrorResponse.MISSING_FIELDS(["id"]);
+        return sendResponse(res, response);
       }
 
       const updatedUser = await userService.updateUser(id, updateData);
       
       if (!updatedUser) {
-        res.status(404).json({
-          success: false,
-          message: "User not found"
-        });
-        return;
+        const response = ErrorResponse.NOT_FOUND("User");
+        return sendResponse(res, response);
       }
 
-      res.status(200).json({
-        success: true,
-        message: "User updated successfully",
-        data: updatedUser
-      });
+      const response = SuccessResponse.UPDATED("User", updatedUser);
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to update user"
-      });
+      const statusCode = error.statusCode || 400;
+      const response = ErrorResponse.CUSTOM(
+        statusCode,
+        error.message || SYSTEM_MESSAGES.USER.UPDATE_FAILED,
+        error
+      );
+      sendResponse(res, response);
     }
   }
 
@@ -238,40 +192,32 @@ export class UserController {
       const { newPassword } = req.body;
       
       if (!id) {
-        res.status(400).json({
-          success: false,
-          message: "User ID is required"
-        });
-        return;
+        const response = ErrorResponse.MISSING_FIELDS(["id"]);
+        return sendResponse(res, response);
       }
 
       if (!newPassword) {
-        res.status(400).json({
-          success: false,
-          message: "New password is required"
-        });
-        return;
+        const response = ErrorResponse.MISSING_FIELDS(["newPassword"]);
+        return sendResponse(res, response);
       }
 
       const updatedUser = await userService.updatePassword(id, newPassword);
       
       if (!updatedUser) {
-        res.status(404).json({
-          success: false,
-          message: "User not found"
-        });
-        return;
+        const response = ErrorResponse.NOT_FOUND("User");
+        return sendResponse(res, response);
       }
 
-      res.status(200).json({
-        success: true,
-        message: "Password updated successfully"
-      });
+      const response = SuccessResponse.CUSTOM(200, "Password updated successfully", null);
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to update password"
-      });
+      const statusCode = error.statusCode || 400;
+      const response = ErrorResponse.CUSTOM(
+        statusCode,
+        error.message || "Failed to update password",
+        error
+      );
+      sendResponse(res, response);
     }
   }
 
@@ -284,32 +230,27 @@ export class UserController {
       const { id } = req.params;
       
       if (!id) {
-        res.status(400).json({
-          success: false,
-          message: "User ID is required"
-        });
-        return;
+        const response = ErrorResponse.MISSING_FIELDS(["id"]);
+        return sendResponse(res, response);
       }
 
       const deletedUser = await userService.deleteUser(id);
       
       if (!deletedUser) {
-        res.status(404).json({
-          success: false,
-          message: "User not found"
-        });
-        return;
+        const response = ErrorResponse.NOT_FOUND("User");
+        return sendResponse(res, response);
       }
 
-      res.status(200).json({
-        success: true,
-        message: "User deleted successfully"
-      });
+      const response = SuccessResponse.DELETED("User");
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to delete user"
-      });
+      const statusCode = error.statusCode || 400;
+      const response = ErrorResponse.CUSTOM(
+        statusCode,
+        error.message || SYSTEM_MESSAGES.USER.DELETE_FAILED,
+        error
+      );
+      sendResponse(res, response);
     }
   }
 
@@ -326,16 +267,11 @@ export class UserController {
       const isGuestBool = isGuest === 'true';
       const users = await userService.getUsersByGuestStatus(isGuestBool, limit, skip);
 
-      res.status(200).json({
-        success: true,
-        message: "Users retrieved successfully",
-        data: users
-      });
+      const response = SuccessResponse.LIST("Users", users);
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to retrieve users"
-      });
+      const response = ErrorResponse.BAD_REQUEST;
+      sendResponse(res, response);
     }
   }
 
@@ -347,16 +283,11 @@ export class UserController {
     try {
       const count = await userService.getUserCount();
 
-      res.status(200).json({
-        success: true,
-        message: "User count retrieved successfully",
-        data: { count }
-      });
+      const response = SuccessResponse.CUSTOM(200, "User count retrieved successfully", { count });
+      sendResponse(res, response);
     } catch (error: any) {
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to get user count"
-      });
+      const response = ErrorResponse.SERVER_ERROR;
+      sendResponse(res, response);
     }
   }
 }
