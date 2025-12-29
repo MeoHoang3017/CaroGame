@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { useTheme } from 'next-themes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,10 +10,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { Gamepad2, Save, Bell, Volume2, Monitor, Globe } from 'lucide-react'
-import Link from 'next/link'
+import { Save, Bell, Volume2, Monitor, Gamepad2 } from 'lucide-react'
+import { toast } from '@/utils/toast'
+import { ProtectedRoute } from '@/components/ProtectedRoute'
 
 export default function SettingsPage() {
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  
   const [settings, setSettings] = useState({
     // Notification settings
     emailNotifications: true,
@@ -37,33 +42,60 @@ export default function SettingsPage() {
     showHints: false,
   })
 
-  const handleSave = () => {
-    // TODO: Integrate with backend API
-    console.log('Saving settings:', settings)
-    // Show success message
-  }
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    setMounted(true)
+    const savedSettings = localStorage.getItem('gameSettings')
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings)
+        setSettings(prev => ({ ...prev, ...parsed }))
+        if (parsed.theme) {
+          setTheme(parsed.theme)
+        }
+      } catch (error) {
+        console.error('Failed to load settings:', error)
+      }
+    }
+  }, [setTheme])
 
+  // Sync theme with settings
+  useEffect(() => {
+    if (mounted && theme) {
+      setSettings(prev => ({ ...prev, theme: theme as 'light' | 'dark' | 'system' }))
+    }
+  }, [theme, mounted])
+
+  // Update theme when settings change
   const updateSetting = (key: string, value: any) => {
     setSettings({ ...settings, [key]: value })
+    // If theme is changed, update immediately
+    if (key === 'theme') {
+      setTheme(value)
+    }
+  }
+
+  const handleSave = () => {
+    try {
+      // Save to localStorage
+      localStorage.setItem('gameSettings', JSON.stringify(settings))
+      
+      // Theme is already updated via updateSetting, just save
+      toast.success('Settings saved successfully!')
+    } catch (error) {
+      toast.error('Failed to save settings')
+      console.error('Failed to save settings:', error)
+    }
+  }
+
+  // Prevent hydration mismatch
+  if (!mounted) {
+    return null
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-      {/* Navigation */}
-      <nav className="container mx-auto px-4 py-6 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Gamepad2 className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl font-bold">Caro Game</h1>
-        </div>
-        <div className="flex gap-4">
-          <Button variant="ghost" asChild>
-            <Link href="/profile">Profile</Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href="/matching">Matching</Link>
-          </Button>
-        </div>
-      </nav>
+    <ProtectedRoute>
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <motion.div
@@ -322,7 +354,8 @@ export default function SettingsPage() {
           </div>
         </motion.div>
       </div>
-    </main>
+      </main>
+    </ProtectedRoute>
   )
 }
 

@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Gamepad2 } from 'lucide-react'
+import { Gamepad2, AlertCircle } from 'lucide-react'
+import { useRegister } from '@/hooks/useAuth'
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -16,25 +17,42 @@ export default function RegisterPage() {
     password: '',
     confirmPassword: '',
   })
+  const [error, setError] = useState<string | null>(null)
+
+  const registerMutation = useRegister()
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     })
+    setError(null) // Clear error when user types
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+    setError(null)
+
     // Basic validation
     if (formData.password !== formData.confirmPassword) {
-      alert('Passwords do not match!')
+      setError('Passwords do not match!')
       return
     }
 
-    // TODO: Integrate with backend API
-    console.log('Registration attempt:', formData)
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters long')
+      return
+    }
+
+    try {
+      await registerMutation.mutateAsync({
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+      })
+    } catch (err: any) {
+      setError(err.message || 'Registration failed. Please try again.')
+    }
   }
 
   return (
@@ -57,6 +75,12 @@ export default function RegisterPage() {
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
+              {error && (
+                <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-md text-sm">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>{error}</span>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
                 <Input
@@ -67,6 +91,7 @@ export default function RegisterPage() {
                   value={formData.username}
                   onChange={handleChange}
                   required
+                  disabled={registerMutation.isPending}
                 />
               </div>
               <div className="space-y-2">
@@ -79,6 +104,7 @@ export default function RegisterPage() {
                   value={formData.email}
                   onChange={handleChange}
                   required
+                  disabled={registerMutation.isPending}
                 />
               </div>
               <div className="space-y-2">
@@ -92,6 +118,7 @@ export default function RegisterPage() {
                   onChange={handleChange}
                   required
                   minLength={6}
+                  disabled={registerMutation.isPending}
                 />
               </div>
               <div className="space-y-2">
@@ -105,12 +132,18 @@ export default function RegisterPage() {
                   onChange={handleChange}
                   required
                   minLength={6}
+                  disabled={registerMutation.isPending}
                 />
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-4">
-              <Button type="submit" className="w-full" size="lg">
-                Create Account
+              <Button 
+                type="submit" 
+                className="w-full" 
+                size="lg"
+                disabled={registerMutation.isPending}
+              >
+                {registerMutation.isPending ? 'Creating account...' : 'Create Account'}
               </Button>
               <div className="text-sm text-center text-muted-foreground">
                 Already have an account?{' '}

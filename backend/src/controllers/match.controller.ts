@@ -12,12 +12,20 @@ export class MatchController {
   /**
    * Get match by ID
    * GET /api/matches/:id
+   * Requires authentication and player check
    */
   async getMatch(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user?.id;
       const { id } = req.params;
+      
       if (!id) {
         const response = ErrorResponse.MISSING_FIELDS(["id"]);
+        return sendResponse(res, response);
+      }
+
+      if (!userId) {
+        const response = ErrorResponse.UNAUTHORIZED;
         return sendResponse(res, response);
       }
 
@@ -25,6 +33,16 @@ export class MatchController {
 
       if (!match) {
         const response = ErrorResponse.NOT_FOUND("Match");
+        return sendResponse(res, response);
+      }
+
+      // Kiểm tra user có phải là player trong match không
+      const isPlayer = (match as any).players?.some(
+        (p: any) => p.userId?.toString() === userId || (p.userId as any)?._id?.toString() === userId
+      );
+
+      if (!isPlayer) {
+        const response = ErrorResponse.FORBIDDEN;
         return sendResponse(res, response);
       }
 
@@ -118,12 +136,20 @@ export class MatchController {
   /**
    * Get match history (for replay)
    * GET /api/matches/:id/history
+   * Requires authentication and player check
    */
   async getMatchHistory(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user?.id;
       const { id } = req.params;
+      
       if (!id) {
         const response = ErrorResponse.MISSING_FIELDS(["id"]);
+        return sendResponse(res, response);
+      }
+
+      if (!userId) {
+        const response = ErrorResponse.UNAUTHORIZED;
         return sendResponse(res, response);
       }
 
@@ -131,6 +157,16 @@ export class MatchController {
 
       if (!match) {
         const response = ErrorResponse.NOT_FOUND("Match");
+        return sendResponse(res, response);
+      }
+
+      // Kiểm tra user có phải là player trong match không
+      const isPlayer = (match as any).players?.some(
+        (p: any) => p.userId?.toString() === userId || (p.userId as any)?._id?.toString() === userId
+      );
+
+      if (!isPlayer) {
+        const response = ErrorResponse.FORBIDDEN;
         return sendResponse(res, response);
       }
 
@@ -145,19 +181,33 @@ export class MatchController {
   /**
    * Get user's matches
    * GET /api/matches/user/:userId
+   * Requires authentication and ownership check
    */
   async getUserMatches(req: Request, res: Response): Promise<void> {
     try {
-      const { userId } = req.params;
-      if (!userId) {
+      const userId = req.user?.id;
+      const { userId: targetUserId } = req.params;
+      
+      if (!targetUserId) {
         const response = ErrorResponse.MISSING_FIELDS(["userId"]);
+        return sendResponse(res, response);
+      }
+
+      if (!userId) {
+        const response = ErrorResponse.UNAUTHORIZED;
+        return sendResponse(res, response);
+      }
+
+      // Kiểm tra quyền - user chỉ có thể xem matches của chính mình
+      if (userId !== targetUserId) {
+        const response = ErrorResponse.FORBIDDEN;
         return sendResponse(res, response);
       }
 
       const limit = parseInt(req.query.limit as string) || 20;
       const skip = parseInt(req.query.skip as string) || 0;
 
-      const matches = await matchService.getUserMatches(userId, limit, skip);
+      const matches = await matchService.getUserMatches(targetUserId, limit, skip);
 
       const response = SuccessResponse.CUSTOM(200, "Matches retrieved successfully", {
         matches,

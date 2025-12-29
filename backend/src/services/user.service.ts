@@ -9,6 +9,8 @@
 import User from "../models/user.model";
 import type { UserModel } from "../types/User";
 import * as Hasher from "../utils/hasher";
+import { sanitizeEmail, sanitizeUsername, sanitizeString } from "../utils/sanitize";
+import { userCache } from "../utils/cache";
 
 export class UserService {
   /**
@@ -18,8 +20,22 @@ export class UserService {
    */
   async getUserById(userId: string): Promise<UserModel | null> {
     try {
+      // Try to get from cache first
+      const cachedUser = await userCache.getById<UserModel>(userId);
+      if (cachedUser) {
+        return cachedUser;
+      }
+
+      // If not in cache, get from database
       const user = await User.findById(userId);
-      return user as unknown as UserModel | null;
+      const userModel = user as unknown as UserModel | null;
+
+      // Cache the result if found
+      if (userModel) {
+        await userCache.setById(userId, userModel);
+      }
+
+      return userModel;
     } catch (error) {
       throw new Error('Invalid user ID format');
     }
@@ -31,8 +47,29 @@ export class UserService {
    * @returns User document or null
    */
   async getUserByEmail(email: string): Promise<UserModel | null> {
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-    return user as unknown as UserModel | null;
+    const sanitizedEmail = sanitizeEmail(email);
+
+    // Try to get from cache first
+    const cachedUser = await userCache.getByEmail<UserModel>(sanitizedEmail);
+    if (cachedUser) {
+      return cachedUser;
+    }
+
+    // If not in cache, get from database
+    const user = await User.findOne({ email: sanitizedEmail });
+    const userModel = user as unknown as UserModel | null;
+
+    // Cache the result if found
+    if (userModel) {
+      await userCache.setByEmail(sanitizedEmail, userModel);
+      // Also cache by ID for faster lookup
+      const userId = (userModel as any)._id?.toString() || userModel.id;
+      if (userId) {
+        await userCache.setById(userId, userModel);
+      }
+    }
+
+    return userModel;
   }
 
   /**
@@ -41,8 +78,32 @@ export class UserService {
    * @returns User document or null
    */
   async getUserByUsername(username: string): Promise<UserModel | null> {
-    const user = await User.findOne({ username: username.trim() });
-    return user as unknown as UserModel | null;
+    const sanitizedUsername = sanitizeUsername(username);
+
+    // Try to get from cache first
+    const cachedUser = await userCache.getByUsername<UserModel>(sanitizedUsername);
+    if (cachedUser) {
+      return cachedUser;
+    }
+
+    // If not in cache, get from database
+    const user = await User.findOne({ username: sanitizedUsername });
+    const userModel = user as unknown as UserModel | null;
+
+    // Cache the result if found
+    if (userModel) {
+      await userCache.setByUsername(sanitizedUsername, userModel);
+      // Also cache by ID and email for faster lookup
+      const userId = (userModel as any)._id?.toString() || userModel.id;
+      if (userId) {
+        await userCache.setById(userId, userModel);
+      }
+      if (userModel.email) {
+        await userCache.setByEmail(userModel.email, userModel);
+      }
+    }
+
+    return userModel;
   }
 
   /**
@@ -65,16 +126,32 @@ export class UserService {
    * @returns Created user
    */
   async createGuestUser(username: string): Promise<UserModel> {
-    const existingUser = await this.getUserByUsername(username);
+    const sanitizedUsername = sanitizeUsername(username);
+    
+    if (!sanitizedUsername || sanitizedUsername.length < 3) {
+      throw new Error('Username must be at least 3 characters long');
+    }
+
+    const existingUser = await this.getUserByUsername(sanitizedUsername);
     if (existingUser) {
       throw new Error('Username already exists');
     }
 
     const guestUser = (await User.create({
-      username: username.trim(),
+      username: sanitizedUsername,
       isGuest: true,
       email: `guest_${Date.now()}@guest.local`, // Temporary email for guests
     } as any)) as unknown as UserModel;
+
+    // Cache the newly created user
+    const userId = (guestUser as any)._id?.toString() || guestUser.id;
+    if (userId) {
+      await userCache.setById(userId, guestUser);
+      await userCache.setByUsername(sanitizedUsername, guestUser);
+      if (guestUser.email) {
+        await userCache.setByEmail(guestUser.email, guestUser);
+      }
+    }
 
     return guestUser;
   }
@@ -85,7 +162,12 @@ export class UserService {
    * @param updateData - Data to update
    * @returns Updated user
    */
-  async updateUser(userId: string, updateData: Partial<UserModel>): Promise<UserModel | null> {
+async updateUser(userId: string, updateData: Partial<UserModel>): Promise<UserModel | null> {
+    // Get old user data for cache invalidation
+    const oldUser = await this.getUserById(userId);
+    const oldEmail = oldUser?.email;
+    const oldUsername = oldUser?.username;
+
     // Don't allow updating password through this method
     const { password, ...safeUpdateData } = updateData as any;
     
@@ -98,11 +180,17 @@ export class UserService {
           throw new Error('Email already in use');
         }
       }
-      safeUpdateData.email = safeUpdateData.email.toLowerCase().trim();
+      safeUpdateData.email = sanitizeEmail(safeUpdateData.email);
     }
 
     // If username is being updated, check for uniqueness
     if (safeUpdateData.username) {
+      safeUpdateData.username = sanitizeUsername(safeUpdateData.username);
+      
+      if (!safeUpdateData.username || safeUpdateData.username.length < 3) {
+        throw new Error('Username must be at least 3 characters long');
+      }
+
       const existingUser = await this.getUserByUsername(safeUpdateData.username);
       if (existingUser) {
         const existingUserId = (existingUser as any)._id?.toString() || existingUser.id;
@@ -110,7 +198,6 @@ export class UserService {
           throw new Error('Username already in use');
         }
       }
-      safeUpdateData.username = safeUpdateData.username.trim();
     }
 
     const updatedUser = await User.findByIdAndUpdate(
@@ -119,7 +206,27 @@ export class UserService {
       { new: true, runValidators: true }
     );
 
-    return updatedUser as unknown as UserModel | null;
+    const userModel = updatedUser as unknown as UserModel | null;
+
+    // Invalidate and update cache
+    if (userModel) {
+      const newEmail = userModel.email || oldEmail;
+      const newUsername = userModel.username || oldUsername;
+      
+      // Invalidate old cache entries
+      await userCache.invalidate(userId, oldEmail, oldUsername);
+      
+      // Cache updated user
+      await userCache.setById(userId, userModel);
+      if (newEmail) {
+        await userCache.setByEmail(newEmail, userModel);
+      }
+      if (newUsername) {
+        await userCache.setByUsername(newUsername, userModel);
+      }
+    }
+
+    return userModel;
   }
 
   /**
@@ -137,7 +244,22 @@ export class UserService {
       { new: true }
     );
 
-    return updatedUser as unknown as UserModel | null;
+    const userModel = updatedUser as unknown as UserModel | null;
+
+    // Invalidate cache (password change doesn't affect other fields, but we refresh cache)
+    if (userModel) {
+      await userCache.invalidate(userId, userModel.email, userModel.username);
+      // Re-cache the user
+      await userCache.setById(userId, userModel);
+      if (userModel.email) {
+        await userCache.setByEmail(userModel.email, userModel);
+      }
+      if (userModel.username) {
+        await userCache.setByUsername(userModel.username, userModel);
+      }
+    }
+
+    return userModel;
   }
 
   /**
@@ -146,8 +268,20 @@ export class UserService {
    * @returns Deleted user or null
    */
   async deleteUser(userId: string): Promise<UserModel | null> {
+    // Get user data before deletion for cache invalidation
+    const user = await this.getUserById(userId);
+    const email = user?.email;
+    const username = user?.username;
+
     const deletedUser = await User.findByIdAndDelete(userId);
-    return deletedUser as unknown as UserModel | null;
+    const userModel = deletedUser as unknown as UserModel | null;
+
+    // Invalidate cache
+    if (userModel || user) {
+      await userCache.invalidate(userId, email, username);
+    }
+
+    return userModel;
   }
 
   /**

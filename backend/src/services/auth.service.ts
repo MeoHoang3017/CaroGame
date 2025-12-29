@@ -20,7 +20,7 @@ export class AuthService {
      */
     async register(data: any) {
       const hashedPassword = await Hasher.hashPassword(data.password);
-      
+
       const newUser = (await User.create({
         ...data,
         password: hashedPassword,

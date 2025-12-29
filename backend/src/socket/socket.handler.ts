@@ -8,6 +8,7 @@ import type { AuthenticatedSocket } from "./socket.middleware";
 import { roomService } from "../services/room.service";
 import { matchService } from "../services/match.service";
 import { CLIENT_EVENTS, SERVER_EVENTS } from "../constants/socket.events";
+import { validateRoomCode, validateMatchId, validateCoordinates, validateRoomCreateData } from "../utils/socket-validator";
 
 export class SocketHandler {
   private io: SocketIOServer;
@@ -74,12 +75,16 @@ export class SocketHandler {
         return;
       }
 
+      // Validate input
+      const validatedData = validateRoomCreateData(data);
+      if (!validatedData) {
+        socket.emit(SERVER_EVENTS.ERROR, { message: "Invalid room data" });
+        return;
+      }
+
       const room = await roomService.createRoom({
         hostId: socket.user.id,
-        boardSize: data.boardSize,
-        maxPlayers: data.maxPlayers,
-        isPrivate: data.isPrivate,
-        allowSpectators: data.allowSpectators,
+        ...validatedData,
       });
 
       // Join socket room
@@ -103,21 +108,28 @@ export class SocketHandler {
         return;
       }
 
+      // Validate room code
+      const roomCode = validateRoomCode(data?.roomCode);
+      if (!roomCode) {
+        socket.emit(SERVER_EVENTS.ERROR, { message: "Invalid room code" });
+        return;
+      }
+
       const room = await roomService.joinRoom({
-        roomCode: data.roomCode,
+        roomCode,
         userId: socket.user.id,
       });
 
       // Join socket room
-      socket.join(data.roomCode);
-      this.socketRooms.set(socket.id, data.roomCode);
-      if (!this.roomSockets.has(data.roomCode)) {
-        this.roomSockets.set(data.roomCode, new Set());
+      socket.join(roomCode);
+      this.socketRooms.set(socket.id, roomCode);
+      if (!this.roomSockets.has(roomCode)) {
+        this.roomSockets.set(roomCode, new Set());
       }
-      this.roomSockets.get(data.roomCode)!.add(socket.id);
+      this.roomSockets.get(roomCode)!.add(socket.id);
 
       // Notify all in room
-      this.io.to(data.roomCode).emit(SERVER_EVENTS.ROOM_UPDATED, { room });
+      this.io.to(roomCode).emit(SERVER_EVENTS.ROOM_UPDATED, { room });
       socket.emit(SERVER_EVENTS.ROOM_JOINED, { room });
     } catch (error: any) {
       socket.emit(SERVER_EVENTS.ERROR, { message: error.message });
@@ -162,10 +174,17 @@ export class SocketHandler {
         return;
       }
 
-      const result = await roomService.startMatch(data.roomCode);
+      // Validate room code
+      const roomCode = validateRoomCode(data?.roomCode);
+      if (!roomCode) {
+        socket.emit(SERVER_EVENTS.ERROR, { message: "Invalid room code" });
+        return;
+      }
+
+      const result = await roomService.startMatch(roomCode, socket.user.id);
 
       // Notify all in room
-      this.io.to(data.roomCode).emit(SERVER_EVENTS.ROOM_STARTED, result);
+      this.io.to(roomCode).emit(SERVER_EVENTS.ROOM_STARTED, result);
     } catch (error: any) {
       socket.emit(SERVER_EVENTS.ERROR, { message: error.message });
     }
@@ -179,19 +198,26 @@ export class SocketHandler {
         return;
       }
 
-      const match = await matchService.getMatch(data.matchId);
+      // Validate match ID
+      const matchId = validateMatchId(data?.matchId);
+      if (!matchId) {
+        socket.emit(SERVER_EVENTS.ERROR, { message: "Invalid match ID" });
+        return;
+      }
+
+      const match = await matchService.getMatch(matchId);
       if (!match) {
         socket.emit(SERVER_EVENTS.ERROR, { message: "Match not found" });
         return;
       }
 
       // Join socket room
-      socket.join(data.matchId);
-      this.socketMatches.set(socket.id, data.matchId);
-      if (!this.matchSockets.has(data.matchId)) {
-        this.matchSockets.set(data.matchId, new Set());
+      socket.join(matchId);
+      this.socketMatches.set(socket.id, matchId);
+      if (!this.matchSockets.has(matchId)) {
+        this.matchSockets.set(matchId, new Set());
       }
-      this.matchSockets.get(data.matchId)!.add(socket.id);
+      this.matchSockets.get(matchId)!.add(socket.id);
 
       socket.emit(SERVER_EVENTS.MATCH_JOINED, { match });
     } catch (error: any) {
@@ -216,26 +242,40 @@ export class SocketHandler {
         return;
       }
 
+      // Validate match ID
+      const matchId = validateMatchId(data?.matchId);
+      if (!matchId) {
+        socket.emit(SERVER_EVENTS.ERROR, { message: "Invalid match ID" });
+        return;
+      }
+
+      // Validate coordinates (max board size 20 = 0-19)
+      const coords = validateCoordinates(data?.x, data?.y, 19);
+      if (!coords) {
+        socket.emit(SERVER_EVENTS.ERROR, { message: "Invalid coordinates" });
+        return;
+      }
+
       const result = await matchService.makeMove({
-        matchId: data.matchId,
-        x: data.x,
-        y: data.y,
+        matchId,
+        x: coords.x,
+        y: coords.y,
         playerId: socket.user.id,
       });
 
       // Broadcast to all in match
-      this.io.to(data.matchId).emit(SERVER_EVENTS.MATCH_MOVE_MADE, {
+      this.io.to(matchId).emit(SERVER_EVENTS.MATCH_MOVE_MADE, {
         match: result.match,
-        move: { x: data.x, y: data.y, playerId: socket.user.id },
+        move: { x: coords.x, y: coords.y, playerId: socket.user.id },
       });
 
       if (result.isWin) {
-        this.io.to(data.matchId).emit(SERVER_EVENTS.MATCH_WIN, {
+        this.io.to(matchId).emit(SERVER_EVENTS.MATCH_WIN, {
           match: result.match,
           winner: result.match.winner,
         });
       } else if (result.isDraw) {
-        this.io.to(data.matchId).emit(SERVER_EVENTS.MATCH_DRAW, {
+        this.io.to(matchId).emit(SERVER_EVENTS.MATCH_DRAW, {
           match: result.match,
         });
       }
@@ -251,10 +291,17 @@ export class SocketHandler {
         return;
       }
 
-      const match = await matchService.endMatch(data.matchId, socket.user.id);
+      // Validate match ID
+      const matchId = validateMatchId(data?.matchId);
+      if (!matchId) {
+        socket.emit(SERVER_EVENTS.ERROR, { message: "Invalid match ID" });
+        return;
+      }
+
+      const match = await matchService.endMatch(matchId, socket.user.id);
 
       // Broadcast to all in match
-      this.io.to(data.matchId).emit(SERVER_EVENTS.MATCH_ENDED, { match });
+      this.io.to(matchId).emit(SERVER_EVENTS.MATCH_ENDED, { match });
     } catch (error: any) {
       socket.emit(SERVER_EVENTS.ERROR, { message: error.message });
     }

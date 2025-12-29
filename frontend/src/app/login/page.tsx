@@ -7,25 +7,38 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Gamepad2 } from 'lucide-react'
+import { Gamepad2, AlertCircle } from 'lucide-react'
+import { useLogin } from '@/hooks/useAuth'
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   })
+  const [error, setError] = useState<string | null>(null)
+
+  const loginMutation = useLogin()
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     })
+    setError(null) // Clear error when user types
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Integrate with backend API
-    console.log('Login attempt:', formData)
+    setError(null)
+
+    try {
+      await loginMutation.mutateAsync({
+        email: formData.email,
+        password: formData.password,
+      })
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please check your credentials.')
+    }
   }
 
   return (
@@ -48,6 +61,12 @@ export default function LoginPage() {
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
+              {error && (
+                <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive rounded-md text-sm">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>{error}</span>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -58,6 +77,7 @@ export default function LoginPage() {
                   value={formData.email}
                   onChange={handleChange}
                   required
+                  disabled={loginMutation.isPending}
                 />
               </div>
               <div className="space-y-2">
@@ -78,12 +98,18 @@ export default function LoginPage() {
                   value={formData.password}
                   onChange={handleChange}
                   required
+                  disabled={loginMutation.isPending}
                 />
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-4">
-              <Button type="submit" className="w-full" size="lg">
-                Sign In
+              <Button 
+                type="submit" 
+                className="w-full" 
+                size="lg"
+                disabled={loginMutation.isPending}
+              >
+                {loginMutation.isPending ? 'Signing in...' : 'Sign In'}
               </Button>
               <div className="text-sm text-center text-muted-foreground">
                 Don't have an account?{' '}

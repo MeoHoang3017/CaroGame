@@ -31,7 +31,7 @@ const userSchema = new mongoose.Schema({
         minlength: 6,
         maxlength: 100,
         trim: true,
-        match: [/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/, 'Invalid password format'],
+        select: false, // Không select password mặc định để bảo mật
     },
     createdAt: {
         type: Date,

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { matchController } from "../controllers/match.controller";
 import { authenticateJWT } from "../middleware/auth.middleware";
+import { validate } from "../middleware/validation.middleware";
+import { matchValidator } from "../validators/match.validator";
 
 const router = Router();
 
@@ -36,7 +38,7 @@ router.use(authenticateJWT);
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.get("/:id", (req, res) => matchController.getMatch(req, res));
+router.get("/:id", validate(matchValidator.getMatch), (req, res) => matchController.getMatch(req, res));
 
 /**
  * @swagger
@@ -73,7 +75,7 @@ router.get("/:id", (req, res) => matchController.getMatch(req, res));
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.post("/:id/move", (req, res) => matchController.makeMove(req, res));
+router.post("/:id/move", validate(matchValidator.makeMove), (req, res) => matchController.makeMove(req, res));
 
 /**
  * @swagger
@@ -104,7 +106,7 @@ router.post("/:id/move", (req, res) => matchController.makeMove(req, res));
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.post("/:id/end", (req, res) => matchController.endMatch(req, res));
+router.post("/:id/end", validate(matchValidator.endMatch), (req, res) => matchController.endMatch(req, res));
 
 /**
  * @swagger
@@ -135,7 +137,7 @@ router.post("/:id/end", (req, res) => matchController.endMatch(req, res));
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.get("/:id/history", (req, res) => matchController.getMatchHistory(req, res));
+router.get("/:id/history", validate(matchValidator.getMatchHistory), (req, res) => matchController.getMatchHistory(req, res));
 
 /**
  * @swagger
@@ -175,7 +177,7 @@ router.get("/:id/history", (req, res) => matchController.getMatchHistory(req, re
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.get("/user/:userId", (req, res) => matchController.getUserMatches(req, res));
+router.get("/user/:userId", validate(matchValidator.getUserMatches), (req, res) => matchController.getUserMatches(req, res));
 
 export default router;
 

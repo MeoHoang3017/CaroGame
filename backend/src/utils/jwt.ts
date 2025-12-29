@@ -1,9 +1,14 @@
 import jwt from 'jsonwebtoken';
 import { encryptJson, decryptJson } from './crypto';
+import dotenv from 'dotenv';
 
-const ACCESS_SECRET = process.env.ACCESS_TOKEN_SECRET_KEY || 'access_key';
-const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET_KEY || 'refresh_key';
+// Load environment variables từ .env file
+// Phải gọi trước khi đọc process.env
+dotenv.config();
 
+// Lấy secrets từ environment variables, không dùng fallback values không an toàn
+const ACCESS_SECRET = process.env.ACCESS_TOKEN_SECRET_KEY;
+const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET_KEY;
 interface TokenPayload {
   id: string;
   isGuest: boolean;
@@ -13,11 +18,32 @@ interface EncryptedTokenPayload {
   enc: string;
 }
 
-if (!ACCESS_SECRET) {
-  throw new Error('ACCESS_TOKEN_SECRET_KEY is not defined in environment variables');
+// Validate required environment variables khi module được load
+if (!ACCESS_SECRET || ACCESS_SECRET.trim() === '') {
+  throw new Error(
+    'ACCESS_TOKEN_SECRET_KEY is required but not defined in environment variables. ' +
+    'Please set it in your .env file.'
+  );
 }
-if (!REFRESH_SECRET) {
-  throw new Error('REFRESH_TOKEN_SECRET_KEY is not defined in environment variables');
+
+if (!REFRESH_SECRET || REFRESH_SECRET.trim() === '') {
+  throw new Error(
+    'REFRESH_TOKEN_SECRET_KEY is required but not defined in environment variables. ' +
+    'Please set it in your .env file.'
+  );
+}
+
+// Validate secret length (nên có ít nhất 32 ký tự)
+if (ACCESS_SECRET.length < 32) {
+  console.warn(
+    'WARNING: ACCESS_TOKEN_SECRET_KEY should be at least 32 characters long for better security.'
+  );
+}
+
+if (REFRESH_SECRET.length < 32) {
+  console.warn(
+    'WARNING: REFRESH_TOKEN_SECRET_KEY should be at least 32 characters long for better security.'
+  );
 }
 
 /**

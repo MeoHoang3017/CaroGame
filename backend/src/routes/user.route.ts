@@ -1,5 +1,9 @@
 import { Router } from "express";
 import { userController } from "../controllers/user.controller";
+import { authenticateJWT, optionalAuth } from "../middleware/auth.middleware";
+import { validate } from "../middleware/validation.middleware";
+import { userValidator } from "../validators/user.validator";
+import { userLookupLimiter } from "../config/security";
 
 const router = Router();
 
@@ -33,7 +37,8 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.get("/", (req, res) => {
+// Public routes (no auth required)
+router.get("/", validate(userValidator.getAllUsers), (req, res) => {
   userController.getAllUsers(req, res);
 });
 
@@ -91,7 +96,7 @@ router.get("/count", (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.get("/guests/:isGuest", (req, res) => {
+router.get("/guests/:isGuest", validate(userValidator.getUsersByGuestStatus), (req, res) => {
   userController.getUsersByGuestStatus(req, res);
 });
 
@@ -123,7 +128,8 @@ router.get("/guests/:isGuest", (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.get("/email/:email", (req, res) => {
+// Email/username lookup - optional auth với rate limiting để tránh enumeration
+router.get("/email/:email", userLookupLimiter, optionalAuth, validate(userValidator.getUserByEmail), (req, res) => {
   userController.getUserByEmail(req, res);
 });
 
@@ -154,7 +160,7 @@ router.get("/email/:email", (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.get("/username/:username", (req, res) => {
+router.get("/username/:username", userLookupLimiter, optionalAuth, validate(userValidator.getUserByUsername), (req, res) => {
   userController.getUserByUsername(req, res);
 });
 
@@ -185,7 +191,7 @@ router.get("/username/:username", (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.get("/:id", (req, res) => {
+router.get("/:id", optionalAuth, validate(userValidator.getUserById), (req, res) => {
   userController.getUserById(req, res);
 });
 
@@ -221,7 +227,7 @@ router.get("/:id", (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.post("/guest", (req, res) => {
+router.post("/guest", validate(userValidator.createGuestUser), (req, res) => {
   userController.createGuestUser(req, res);
 });
 
@@ -272,7 +278,8 @@ router.post("/guest", (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.put("/:id/password", (req, res) => {
+// Protected routes - require authentication
+router.put("/:id/password", authenticateJWT, validate(userValidator.updatePassword), (req, res) => {
   userController.updatePassword(req, res);
 });
 
@@ -346,11 +353,11 @@ router.put("/:id/password", (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.put("/:id", (req, res) => {
+router.put("/:id", authenticateJWT, validate(userValidator.updateUser), (req, res) => {
   userController.updateUser(req, res);
 });
 
-router.delete("/:id", (req, res) => {
+router.delete("/:id", authenticateJWT, validate(userValidator.deleteUser), (req, res) => {
   userController.deleteUser(req, res);
 });
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,45 +9,143 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
-import { Gamepad2, Edit, Save, Trophy, TrendingUp, Calendar, Mail, User } from 'lucide-react'
+import { Edit, Save, Trophy, TrendingUp, Calendar, Mail, User, Loader2, Gamepad2 } from 'lucide-react'
+import { useUser, useUpdateUser } from '@/hooks/useUser'
+import { useUserMatches } from '@/hooks/useMatch'
+import { getStoredUser } from '@/utils/auth'
+import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { toast } from '@/utils/toast'
 import Link from 'next/link'
 
 export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false)
-  const [profile, setProfile] = useState({
-    username: 'Player1',
-    email: 'player1@example.com',
-    avatar: '',
-    bio: 'Caro game enthusiast',
-    joinDate: '2024-01-15',
-  })
+  const [editData, setEditData] = useState({ username: '', email: '' })
+  
+  // Get user ID from stored user
+  const storedUser = getStoredUser()
+  const userId = storedUser?.id || storedUser?._id
+  
+  // Fetch user data
+  const { data: user, isLoading: userLoading, error: userError } = useUser(userId || '', !!userId)
+  
+  // Fetch user matches for stats
+  const { data: dataMatches = { matches: [], page: 0, limit: 0, total: 0 }, isLoading: matchesLoading } = useUserMatches(userId || '', 100, 0, !!userId)
+  const matches = Array.isArray(dataMatches) ? dataMatches : dataMatches?.matches || [];
 
-  const stats = {
-    gamesPlayed: 127,
-    gamesWon: 78,
-    gamesLost: 49,
-    winRate: 61.4,
-    currentStreak: 5,
-    bestStreak: 12,
-    rank: 42,
-    totalPoints: 2450,
-  }
+  // Update user mutation
+  const updateUserMutation = useUpdateUser()
+  
+  // Calculate stats from matches
+  const stats = useMemo(() => {
+    if (!matches || matches.length === 0) {
+      return {
+        gamesPlayed: 0,
+        gamesWon: 0,
+        gamesLost: 0,
+        winRate: 0,
+        currentStreak: 0,
+        bestStreak: 0,
+        rank: 0,
+        totalPoints: 0,
+      }
+    }
 
-  const achievements = [
-    { id: '1', name: 'First Win', description: 'Win your first game', unlocked: true, date: '2024-01-16' },
-    { id: '2', name: 'Streak Master', description: 'Win 10 games in a row', unlocked: true, date: '2024-02-20' },
-    { id: '3', name: 'Century Club', description: 'Play 100 games', unlocked: true, date: '2024-03-10' },
-    { id: '4', name: 'Perfect Game', description: 'Win without losing a single piece', unlocked: false },
-  ]
-
-  const handleSave = () => {
-    // TODO: Integrate with backend API
-    console.log('Saving profile:', profile)
-    setIsEditing(false)
+    
+    const gamesPlayed = matches.length
+    const gamesWon = matches.filter((m: any) => {
+      const winnerId = typeof m.winner === 'string' ? m.winner : m.winner?.id || m.winner?._id
+      return winnerId === userId && m.result === 'win-loss'
+    }).length
+    const gamesLost = matches.filter((m: any) => {
+      const winnerId = typeof m.winner === 'string' ? m.winner : m.winner?.id || m.winner?._id
+      return winnerId !== userId && m.result === 'win-loss'
+    }).length
+    const winRate = gamesPlayed > 0 ? (gamesWon / gamesPlayed) * 100 : 0
+    
+    return {
+      gamesPlayed,
+      gamesWon,
+      gamesLost,
+      winRate: Math.round(winRate * 10) / 10,
+      currentStreak: 0, // TODO: Calculate from match history
+      bestStreak: 0, // TODO: Calculate from match history
+      rank: 0, // TODO: Get from backend
+      totalPoints: gamesWon * 10, // Simple calculation
+    }
+  }, [matches, userId])
+  
+  // Initialize edit data when user loads
+  useEffect(() => {
+    if (user) {
+      setEditData({
+        username: user.username || '',
+        email: user.email || '',
+      })
+    }
+  }, [user])
+  
+  const handleSave = async () => {
+    if (!userId) return
+    
+    try {
+      await updateUserMutation.mutateAsync({
+        userId,
+        data: editData,
+      })
+      setIsEditing(false)
+      toast.success('Profile updated successfully!')
+    } catch (error: any) {
+      toast.error('Failed to update profile', error.message)
+    }
   }
 
   const handleChange = (field: string, value: string) => {
-    setProfile({ ...profile, [field]: value })
+    setEditData({ ...editData, [field]: value })
+  }
+  
+  // Use user data or fallback
+  const profile = user ? {
+    username: user.username || 'Unknown',
+    email: user.email || '',
+    avatar: '',
+    bio: 'Caro game enthusiast', // TODO: Add bio field to user model
+    joinDate: user.createdAt || new Date().toISOString(),
+  } : {
+    username: 'Loading...',
+    email: '',
+    avatar: '',
+    bio: '',
+    joinDate: new Date().toISOString(),
+  }
+  
+  const achievements = [
+    { id: '1', name: 'First Win', description: 'Win your first game', unlocked: stats.gamesWon > 0 },
+    { id: '2', name: 'Streak Master', description: 'Win 10 games in a row', unlocked: stats.bestStreak >= 10 },
+    { id: '3', name: 'Century Club', description: 'Play 100 games', unlocked: stats.gamesPlayed >= 100 },
+    { id: '4', name: 'Perfect Game', description: 'Win without losing a single piece', unlocked: false },
+  ]
+  
+  if (userLoading) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </main>
+    )
+  }
+  
+  if (userError || !user) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <p className="text-destructive">Failed to load profile. Please try again.</p>
+            <Button className="mt-4" asChild>
+              <Link href="/">Go Home</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    )
   }
 
   return (
@@ -92,25 +190,44 @@ export default function ProfilePage() {
                         <Label htmlFor="username">Username</Label>
                         <Input
                           id="username"
-                          value={profile.username}
+                          value={editData.username}
                           onChange={(e) => handleChange('username', e.target.value)}
+                          disabled={updateUserMutation.isPending}
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="bio">Bio</Label>
+                        <Label htmlFor="email">Email</Label>
                         <Input
-                          id="bio"
-                          value={profile.bio}
-                          onChange={(e) => handleChange('bio', e.target.value)}
-                          placeholder="Tell us about yourself"
+                          id="email"
+                          type="email"
+                          value={editData.email}
+                          onChange={(e) => handleChange('email', e.target.value)}
+                          disabled={updateUserMutation.isPending}
                         />
                       </div>
                       <div className="flex gap-2">
-                        <Button onClick={handleSave} className="gap-2">
-                          <Save className="h-4 w-4" />
-                          Save Changes
+                        <Button 
+                          onClick={handleSave} 
+                          className="gap-2"
+                          disabled={updateUserMutation.isPending}
+                        >
+                          {updateUserMutation.isPending ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <Save className="h-4 w-4" />
+                              Save Changes
+                            </>
+                          )}
                         </Button>
-                        <Button variant="outline" onClick={() => setIsEditing(false)}>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setIsEditing(false)}
+                          disabled={updateUserMutation.isPending}
+                        >
                           Cancel
                         </Button>
                       </div>
@@ -119,7 +236,7 @@ export default function ProfilePage() {
                     <div>
                       <div className="flex items-center gap-4 mb-2">
                         <h2 className="text-3xl font-bold">{profile.username}</h2>
-                        <Badge variant="secondary">Rank #{stats.rank}</Badge>
+                        {stats.rank > 0 && <Badge variant="secondary">Rank #{stats.rank}</Badge>}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -130,7 +247,7 @@ export default function ProfilePage() {
                           Edit Profile
                         </Button>
                       </div>
-                      <p className="text-muted-foreground mb-4">{profile.bio}</p>
+                      {profile.bio && <p className="text-muted-foreground mb-4">{profile.bio}</p>}
                       <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                         <div className="flex items-center gap-2">
                           <Mail className="h-4 w-4" />
@@ -219,10 +336,15 @@ export default function ProfilePage() {
                   <span className="font-semibold">{stats.bestStreak}</span>
                 </div>
                 <Separator />
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Global Rank</span>
-                  <span className="font-semibold">#{stats.rank}</span>
-                </div>
+                {stats.rank > 0 && (
+                  <>
+                    <Separator />
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Global Rank</span>
+                      <span className="font-semibold">#{stats.rank}</span>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -234,7 +356,7 @@ export default function ProfilePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {achievements.map((achievement) => (
+                  {achievements.map((achievement: any) => (
                     <div
                       key={achievement.id}
                       className={`p-3 rounded-lg border ${

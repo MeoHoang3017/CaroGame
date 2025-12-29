@@ -11,7 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Gamepad2, Users, Search, Plus, Copy, Check } from 'lucide-react'
+import { Users, Search, Plus, Copy, Check, Loader2, AlertCircle, Gamepad2 } from 'lucide-react'
+import { useAvailableRooms, useCreateRoom, useJoinRoom } from '@/hooks/useRoom'
+import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { toast } from '@/utils/toast'
 import Link from 'next/link'
 
 export default function MatchingPage() {
@@ -28,25 +31,44 @@ export default function MatchingPage() {
     allowSpectators: true,
   })
 
-  // Mock data for available rooms
-  const availableRooms = [
-    { id: '1', code: 'ABC123', host: 'Player1', players: 1, maxPlayers: 2, boardSize: 15, isPrivate: false },
-    { id: '2', code: 'XYZ789', host: 'Player2', players: 2, maxPlayers: 2, boardSize: 20, isPrivate: false },
-    { id: '3', code: 'DEF456', host: 'Player3', players: 1, maxPlayers: 4, boardSize: 15, isPrivate: true },
-  ]
+  // Fetch available rooms
+  const { data: dataAvailableRooms = { rooms: [], page: 0, limit: 0, total: 0 } , isLoading: roomsLoading, error: roomsError } = useAvailableRooms(50, 0)
+  const availableRooms = Array.isArray(dataAvailableRooms) ? dataAvailableRooms : dataAvailableRooms?.rooms || [];
+  // Create room mutation
+  const createRoomMutation = useCreateRoom()
+  
+  // Join room mutation
+  const joinRoomMutation = useJoinRoom()
 
-  const handleCreateRoom = () => {
-    // TODO: Integrate with backend API
-    const newRoomCode = Math.random().toString(36).substring(2, 8).toUpperCase()
-    setRoomCode(newRoomCode)
-    setShowCreateDialog(false)
-    // Navigate to room page
-    router.push(`/room?code=${newRoomCode}`)
+  const handleCreateRoom = async () => {
+    try {
+      const response = await createRoomMutation.mutateAsync({
+        boardSize: parseInt(roomSettings.boardSize),
+        maxPlayers: parseInt(roomSettings.maxPlayers),
+        isPrivate: roomSettings.isPrivate,
+        allowSpectators: roomSettings.allowSpectators,
+      })
+      
+      if (response.result) {
+        const newRoomCode = response.result.roomCode
+        setRoomCode(newRoomCode)
+        setShowCreateDialog(false)
+        router.push(`/room?code=${newRoomCode}`)
+      }
+    } catch (error) {
+      console.error('Failed to create room:', error)
+    }
   }
 
-  const handleJoinRoom = (code: string) => {
-    // TODO: Integrate with backend API
-    router.push(`/room?code=${code}`)
+  const handleJoinRoom = async (code: string) => {
+    try {
+      const response = await joinRoomMutation.mutateAsync({ roomCode: code })
+      if (response.result) {
+        router.push(`/room?code=${code}`)
+      }
+    } catch (error: any) {
+      alert(error.message || 'Failed to join room')
+    }
   }
 
   const handleCopyCode = () => {
@@ -54,11 +76,14 @@ export default function MatchingPage() {
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
-
-  const filteredRooms = availableRooms.filter(room =>
-    room.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    room.host.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  console.log(availableRooms);
+  const filteredRooms = availableRooms.filter((room: any) => {
+    const code = room.roomCode?.toLowerCase() || ''
+    const hostName = typeof room.hostId === 'object' 
+      ? room.hostId?.username?.toLowerCase() || ''
+      : ''
+    return code.includes(searchQuery.toLowerCase()) || hostName.includes(searchQuery.toLowerCase())
+  })
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
@@ -162,10 +187,26 @@ export default function MatchingPage() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowCreateDialog(false)}
+                    disabled={createRoomMutation.isPending}
+                  >
                     Cancel
                   </Button>
-                  <Button onClick={handleCreateRoom}>Create Room</Button>
+                  <Button 
+                    onClick={handleCreateRoom}
+                    disabled={createRoomMutation.isPending}
+                  >
+                    {createRoomMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Creating...
+                      </>
+                    ) : (
+                      'Create Room'
+                    )}
+                  </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -189,56 +230,80 @@ export default function MatchingPage() {
           {/* Available Rooms */}
           <div>
             <h3 className="text-xl font-semibold mb-4">Available Rooms</h3>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredRooms.length === 0 ? (
-                <Card className="col-span-full">
-                  <CardContent className="pt-6 text-center text-muted-foreground">
-                    No rooms found. Create your own room to get started!
-                  </CardContent>
-                </Card>
-              ) : (
-                filteredRooms.map((room, index) => (
-                  <motion.div
-                    key={room.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: index * 0.1 }}
-                  >
-                    <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-                      <CardHeader>
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <CardTitle className="text-lg">{room.code}</CardTitle>
-                            <CardDescription>Host: {room.host}</CardDescription>
-                          </div>
-                          {room.isPrivate && (
-                            <Badge variant="secondary">Private</Badge>
-                          )}
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2 mb-4">
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Users className="h-4 w-4" />
-                            <span>{room.players}/{room.maxPlayers} Players</span>
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            Board: {room.boardSize}x{room.boardSize}
-                          </div>
-                        </div>
-                        <Button
-                          className="w-full"
-                          onClick={() => handleJoinRoom(room.code)}
-                          disabled={room.players >= room.maxPlayers}
-                        >
-                          {room.players >= room.maxPlayers ? 'Room Full' : 'Join Room'}
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))
-              )}
-            </div>
+            {roomsLoading ? (
+              <Card className="col-span-full">
+                <CardContent className="pt-6 text-center">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+                  <p className="mt-4 text-muted-foreground">Loading rooms...</p>
+                </CardContent>
+              </Card>
+            ) : roomsError ? (
+              <Card className="col-span-full">
+                <CardContent className="pt-6 text-center">
+                  <AlertCircle className="h-8 w-8 mx-auto text-destructive" />
+                  <p className="mt-4 text-destructive">Failed to load rooms</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredRooms.length === 0 ? (
+                  <Card className="col-span-full">
+                    <CardContent className="pt-6 text-center text-muted-foreground">
+                      No rooms found. Create your own room to get started!
+                    </CardContent>
+                  </Card>
+                ) : (
+                  filteredRooms.map((room: any, index: number) => {
+                    const hostName = typeof room.hostId === 'object' 
+                      ? room.hostId?.username || 'Unknown'
+                      : 'Unknown'
+                    const playerCount = room.players?.length || 0
+                    const isFull = playerCount >= room.maxPlayers
+                    
+                    return (
+                      <motion.div
+                        key={room.roomCode || index}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: index * 0.1 }}
+                      >
+                        <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+                          <CardHeader>
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <CardTitle className="text-lg">{room.roomCode}</CardTitle>
+                                <CardDescription>Host: {hostName}</CardDescription>
+                              </div>
+                              {room.settings?.isPrivate && (
+                                <Badge variant="secondary">Private</Badge>
+                              )}
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2 mb-4">
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Users className="h-4 w-4" />
+                                <span>{playerCount}/{room.maxPlayers} Players</span>
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                Board: {room.boardSize}x{room.boardSize}
+                              </div>
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => handleJoinRoom(room.roomCode)}
+                              disabled={isFull || joinRoomMutation.isPending}
+                            >
+                              {isFull ? 'Room Full' : 'Join Room'}
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      </motion.div>
+                    )
+                  })
+                )}
+              </div>
+            )}
           </div>
         </motion.div>
       </div>

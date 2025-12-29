@@ -9,21 +9,6 @@ import { Gamepad2, Users, Trophy, Zap } from 'lucide-react'
 export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-      {/* Navigation */}
-      <nav className="container mx-auto px-4 py-6 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Gamepad2 className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl font-bold">Caro Game</h1>
-        </div>
-        <div className="flex gap-4">
-          <Button variant="ghost" asChild>
-            <Link href="/login">Login</Link>
-          </Button>
-          <Button asChild>
-            <Link href="/register">Register</Link>
-          </Button>
-        </div>
-      </nav>
 
       {/* Hero Section */}
       <section className="container mx-auto px-4 py-20">

@@ -3,6 +3,7 @@ import { userService } from "../services/user.service";
 import type { UserModel } from "../types/User";
 import { SuccessResponse, ErrorResponse, sendResponse } from "../utils/response";
 import { SYSTEM_MESSAGES } from "../constants/messages";
+import { securityLogger } from "../utils/security-logger";
 
 /**
  * User Controller
@@ -151,14 +152,27 @@ export class UserController {
   /**
    * Update user
    * PUT /api/users/:id
+   * Requires authentication and ownership check
    */
   async updateUser(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user?.id;
       const { id } = req.params;
       const updateData: Partial<UserModel> = req.body;
       
       if (!id) {
         const response = ErrorResponse.MISSING_FIELDS(["id"]);
+        return sendResponse(res, response);
+      }
+
+      if (!userId) {
+        const response = ErrorResponse.UNAUTHORIZED;
+        return sendResponse(res, response);
+      }
+
+      // Kiểm tra quyền sở hữu - user chỉ có thể update chính mình
+      if (userId !== id) {
+        const response = ErrorResponse.FORBIDDEN;
         return sendResponse(res, response);
       }
 
@@ -185,19 +199,62 @@ export class UserController {
   /**
    * Update user password
    * PUT /api/users/:id/password
+   * Requires authentication, ownership check, and old password verification
    */
   async updatePassword(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user?.id;
       const { id } = req.params;
-      const { newPassword } = req.body;
+      const { oldPassword, newPassword } = req.body;
       
       if (!id) {
         const response = ErrorResponse.MISSING_FIELDS(["id"]);
         return sendResponse(res, response);
       }
 
+      if (!userId) {
+        const response = ErrorResponse.UNAUTHORIZED;
+        return sendResponse(res, response);
+      }
+
+      // Kiểm tra quyền sở hữu - user chỉ có thể đổi password của chính mình
+      if (userId !== id) {
+        const response = ErrorResponse.FORBIDDEN;
+        return sendResponse(res, response);
+      }
+
       if (!newPassword) {
         const response = ErrorResponse.MISSING_FIELDS(["newPassword"]);
+        return sendResponse(res, response);
+      }
+
+      // Yêu cầu old password để xác thực
+      if (!oldPassword) {
+        const response = ErrorResponse.MISSING_FIELDS(["oldPassword"]);
+        return sendResponse(res, response);
+      }
+
+      // Verify old password
+      const user = await userService.getUserById(id);
+      if (!user) {
+        const response = ErrorResponse.NOT_FOUND("User");
+        return sendResponse(res, response);
+      }
+
+      // Get user with password field
+      const User = (await import("../models/user.model")).default;
+      const userWithPassword = await User.findById(id).select("+password");
+      
+      if (!userWithPassword || !userWithPassword.password) {
+        const response = ErrorResponse.CUSTOM(400, "User does not have a password set", null);
+        return sendResponse(res, response);
+      }
+
+      const Hasher = await import("../utils/hasher");
+      const isValidPassword = await Hasher.isMatch(oldPassword, userWithPassword.password);
+      
+      if (!isValidPassword) {
+        const response = ErrorResponse.WRONG_PASSWORD;
         return sendResponse(res, response);
       }
 
@@ -207,6 +264,11 @@ export class UserController {
         const response = ErrorResponse.NOT_FOUND("User");
         return sendResponse(res, response);
       }
+
+      // Log password change
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const userAgent = req.get('user-agent') || 'unknown';
+      securityLogger.logPasswordChange(userId, ip, userAgent);
 
       const response = SuccessResponse.CUSTOM(200, "Password updated successfully", null);
       sendResponse(res, response);
@@ -224,13 +286,26 @@ export class UserController {
   /**
    * Delete user
    * DELETE /api/users/:id
+   * Requires authentication and ownership check
    */
   async deleteUser(req: Request, res: Response): Promise<void> {
     try {
+      const userId = req.user?.id;
       const { id } = req.params;
       
       if (!id) {
         const response = ErrorResponse.MISSING_FIELDS(["id"]);
+        return sendResponse(res, response);
+      }
+
+      if (!userId) {
+        const response = ErrorResponse.UNAUTHORIZED;
+        return sendResponse(res, response);
+      }
+
+      // Kiểm tra quyền sở hữu - user chỉ có thể delete chính mình
+      if (userId !== id) {
+        const response = ErrorResponse.FORBIDDEN;
         return sendResponse(res, response);
       }
 

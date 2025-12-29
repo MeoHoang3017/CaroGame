@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
@@ -8,29 +8,70 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
-import { Gamepad2, Users, Copy, Check, Play, LogOut, UserPlus } from 'lucide-react'
+import { Users, Copy, Check, Play, LogOut, UserPlus, Loader2, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
+import { useRoom, useStartMatch, useLeaveRoom } from '@/hooks/useRoom'
+import { getStoredUser } from '@/utils/auth'
+import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { toast } from '@/utils/toast'
 
 export default function RoomPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const roomCode = searchParams.get('code') || 'ABC123'
+  const roomCode = searchParams.get('code') || ''
   const [copied, setCopied] = useState(false)
-  const [isHost, setIsHost] = useState(true) // TODO: Get from API
-  const [roomStatus, setRoomStatus] = useState<'waiting' | 'starting' | 'playing'>('waiting')
+  
+  const storedUser = getStoredUser()
+  const userId = storedUser?.id || storedUser?._id
 
-  // Mock data
-  const [players, setPlayers] = useState([
-    { id: '1', username: 'You', avatar: '', isReady: true, isHost: true },
-    { id: '2', username: 'Player2', avatar: '', isReady: false, isHost: false },
-  ])
+  // Fetch room data
+  const { data: room, isLoading: roomLoading, error: roomError } = useRoom(roomCode, !!roomCode)
+  
+  // Mutations
+  const startMatchMutation = useStartMatch()
+  const leaveRoomMutation = useLeaveRoom()
 
-  const roomInfo = {
+  // Check if current user is host
+  const isHost = useMemo(() => {
+    if (!room || !userId) return false
+    const hostId = typeof room.hostId === 'string' 
+      ? room.hostId 
+      : room.hostId?.id || room.hostId?._id
+    return hostId === userId
+  }, [room, userId])
+
+  // Get players from room
+  const players = useMemo(() => {
+    if (!room?.players) return []
+    return room.players.map((p: any) => {
+      const playerUserId = typeof p.userId === 'string' 
+        ? p.userId 
+        : p.userId?.id || p.userId?._id
+      const playerUsername = typeof p.userId === 'object' 
+        ? p.userId?.username || 'Unknown'
+        : 'Unknown'
+      return {
+        id: playerUserId,
+        username: playerUsername,
+        avatar: '',
+        isReady: true, // TODO: Add ready status to backend
+        isHost: playerUserId === (typeof room.hostId === 'string' ? room.hostId : room.hostId?.id || room.hostId?._id),
+      }
+    })
+  }, [room])
+
+  const roomInfo = room ? {
+    code: room.roomCode,
+    boardSize: room.boardSize,
+    maxPlayers: room.maxPlayers,
+    allowSpectators: room.settings?.allowSpectators || false,
+    spectators: 0, // TODO: Get from backend
+  } : {
     code: roomCode,
     boardSize: 15,
     maxPlayers: 2,
     allowSpectators: true,
-    spectators: 3,
+    spectators: 0,
   }
 
   const handleCopyCode = () => {
@@ -39,40 +80,79 @@ export default function RoomPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const handleStartGame = () => {
-    // TODO: Integrate with backend API
-    setRoomStatus('starting')
-    setTimeout(() => {
-      router.push('/game')
-    }, 2000)
+  const handleStartGame = async () => {
+    try {
+      const response = await startMatchMutation.mutateAsync(roomCode)
+      if (response.result?.match) {
+        const matchId = response.result.match.id || response.result.match._id
+        if (matchId) {
+          router.push(`/game?matchId=${matchId}`)
+        }
+      }
+    } catch (error: any) {
+      alert(error.message || 'Failed to start match')
+    }
   }
 
-  const handleLeaveRoom = () => {
-    // TODO: Integrate with backend API
-    router.push('/matching')
+  const handleLeaveRoom = async () => {
+    try {
+      await leaveRoomMutation.mutateAsync(roomCode)
+      router.push('/matching')
+    } catch (error: any) {
+      alert(error.message || 'Failed to leave room')
+    }
   }
 
-  const handleToggleReady = () => {
-    // TODO: Integrate with backend API
-    setPlayers(players.map(p => 
-      p.id === '1' ? { ...p, isReady: !p.isReady } : p
-    ))
+  const allPlayersReady = players.length === roomInfo.maxPlayers && room?.status === 'starting'
+  
+  // Redirect if no room code
+  useEffect(() => {
+    if (!roomCode) {
+      router.push('/matching')
+    }
+  }, [roomCode, router])
+  
+  // Redirect if room not found
+  useEffect(() => {
+    if (roomError && !roomLoading) {
+      setTimeout(() => {
+        router.push('/matching')
+      }, 3000)
+    }
+  }, [roomError, roomLoading, router])
+  
+  if (!roomCode) {
+    return null
   }
-
-  const allPlayersReady = players.every(p => p.isReady) && players.length === roomInfo.maxPlayers
+  
+  if (roomLoading) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </main>
+    )
+  }
+  
+  if (roomError || !room) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <AlertCircle className="h-8 w-8 mx-auto text-destructive mb-4" />
+            <p className="text-destructive mb-4">Room not found or failed to load</p>
+            <p className="text-sm text-muted-foreground mb-4">Redirecting to matching...</p>
+            <Button asChild>
+              <Link href="/matching">Go to Matching</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    )
+  }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-      {/* Navigation */}
-      <nav className="container mx-auto px-4 py-6 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Gamepad2 className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl font-bold">Caro Game</h1>
-        </div>
-        <Button variant="ghost" asChild>
-          <Link href="/matching">Back to Matching</Link>
-        </Button>
-      </nav>
+    <ProtectedRoute>
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 
       <div className="container mx-auto px-4 py-8 max-w-5xl">
         <motion.div
@@ -88,7 +168,12 @@ export default function RoomPage() {
                 <div className="flex justify-between items-start">
                   <div>
                     <CardTitle className="text-2xl">Room {roomCode}</CardTitle>
-                    <CardDescription>Waiting for players...</CardDescription>
+                    <CardDescription>
+                      {room.status === 'waiting' && 'Waiting for players...'}
+                      {room.status === 'starting' && 'Starting game...'}
+                      {room.status === 'in-game' && 'Game in progress'}
+                      {room.status === 'closed' && 'Room closed'}
+                    </CardDescription>
                   </div>
                   <Button
                     variant="outline"
@@ -193,24 +278,24 @@ export default function RoomPage() {
 
             {/* Actions */}
             <div className="flex gap-4">
-              {isHost ? (
+              {isHost && (
                 <Button
                   size="lg"
                   className="flex-1 gap-2"
                   onClick={handleStartGame}
-                  disabled={!allPlayersReady || roomStatus === 'starting'}
+                  disabled={!allPlayersReady || startMatchMutation.isPending || room.status !== 'starting'}
                 >
-                  <Play className="h-5 w-5" />
-                  {roomStatus === 'starting' ? 'Starting Game...' : 'Start Game'}
-                </Button>
-              ) : (
-                <Button
-                  size="lg"
-                  variant={players.find(p => p.id === '1')?.isReady ? 'outline' : 'default'}
-                  className="flex-1"
-                  onClick={handleToggleReady}
-                >
-                  {players.find(p => p.id === '1')?.isReady ? 'Not Ready' : 'Ready'}
+                  {startMatchMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-5 w-5" />
+                      Start Game
+                    </>
+                  )}
                 </Button>
               )}
               <Button
@@ -218,9 +303,19 @@ export default function RoomPage() {
                 variant="outline"
                 className="gap-2"
                 onClick={handleLeaveRoom}
+                disabled={leaveRoomMutation.isPending}
               >
-                <LogOut className="h-5 w-5" />
-                Leave Room
+                {leaveRoomMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Leaving...
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="h-5 w-5" />
+                    Leave Room
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -239,7 +334,12 @@ export default function RoomPage() {
                 <Separator />
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Status</p>
-                  <Badge variant="secondary">Waiting</Badge>
+                  <Badge variant="secondary">
+                    {room.status === 'waiting' && 'Waiting'}
+                    {room.status === 'starting' && 'Starting'}
+                    {room.status === 'in-game' && 'In Game'}
+                    {room.status === 'closed' && 'Closed'}
+                  </Badge>
                 </div>
                 <Separator />
                 <div>
@@ -280,7 +380,8 @@ export default function RoomPage() {
           </div>
         </motion.div>
       </div>
-    </main>
+      </main>
+    </ProtectedRoute>
   )
 }
 

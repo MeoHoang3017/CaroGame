@@ -1,5 +1,8 @@
 import { Router } from "express";
 import { authController } from "../controllers/auth.controller";
+import { validate } from "../middleware/validation.middleware";
+import { authValidator } from "../validators/auth.validator";
+import { authLimiter } from "../config/security";
 
 const router = Router();
 
@@ -29,9 +32,14 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.post("/register", (req, res) => {
-  authController.register(req, res);
-});
+router.post(
+  "/register",
+  authLimiter, // Rate limiting cho auth endpoints
+  validate(authValidator.register), // Validation middleware
+  (req, res) => {
+    authController.register(req, res);
+  }
+);
 
 /**
  * @swagger
@@ -68,9 +76,14 @@ router.post("/register", (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.post("/login", (req, res) => {
-  authController.login(req, res);
-});
+router.post(
+  "/login",
+  authLimiter, // Rate limiting cho auth endpoints
+  validate(authValidator.login), // Validation middleware
+  (req, res) => {
+    authController.login(req, res);
+  }
+);
 
 export default router;
 

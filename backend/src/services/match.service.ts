@@ -8,12 +8,15 @@ import { gameLogicService } from "./game-logic.service";
 import type { MatchModel, CreateMatchData, MakeMoveData, MatchDocument } from "../types/Match";
 import { createError } from "../middleware/error.middleware";
 import mongoose from "mongoose";
+import { matchCache } from "../utils/cache";
 
 export class MatchService {
   /**
    * Tạo match mới từ room
+   * @param data - Match data
+   * @param session - Optional mongoose session for transaction
    */
-  async createMatch(data: CreateMatchData): Promise<MatchModel> {
+  async createMatch(data: CreateMatchData, session?: mongoose.ClientSession): Promise<MatchModel> {
     try {
       // Validate players
       if (!data.players || data.players.length !== 2) {
@@ -29,18 +32,31 @@ export class MatchService {
       // Generate room code if not provided
       const roomCode = data.roomCode || this.generateRoomCode();
 
-      const match = await Match.create({
+      const matchOptions: any = {
         players: data.players,
         boardSize: data.boardSize || 15,
         roomCode,
         result: "ongoing",
         startTime: new Date(),
-      } as any);
+      };
 
-      return (match as any).toObject() as MatchModel;
+      // Nếu có session, sử dụng session
+      const match = session 
+        ? await Match.create([matchOptions], { session })
+        : await Match.create(matchOptions);
+
+      const matchModel = (Array.isArray(match) ? match[0] : match).toObject() as MatchModel;
+
+      // Cache the newly created match
+      const matchId = (matchModel as any)._id?.toString() || matchModel.id;
+      if (matchId) {
+        await matchCache.setById(matchId, matchModel);
+      }
+
+      return matchModel;
     } catch (error: any) {
-      if (error.code === 11000) {
-        // Duplicate room code
+      if (error.code === 11000 && !session) {
+        // Duplicate room code - chỉ retry nếu không có session (tránh retry trong transaction)
         const retryData = { ...data };
         delete retryData.roomCode;
         return this.createMatch(retryData); // Retry with new code
@@ -53,12 +69,26 @@ export class MatchService {
    * Lấy thông tin match
    */
   async getMatch(matchId: string): Promise<MatchModel | null> {
+    // Try to get from cache first
+    const cachedMatch = await matchCache.getById<MatchModel>(matchId);
+    if (cachedMatch) {
+      return cachedMatch;
+    }
+
+    // If not in cache, get from database
     const match = await Match.findById(matchId)
       .populate("players.userId", "username email")
       .populate("winner", "username")
       .lean();
 
-    return match as MatchModel | null;
+    const matchModel = match as MatchModel | null;
+
+    // Cache the result if found
+    if (matchModel) {
+      await matchCache.setById(matchId, matchModel);
+    }
+
+    return matchModel;
   }
 
   /**
@@ -156,8 +186,19 @@ export class MatchService {
       .populate("winner", "username")
       .lean();
 
+    const matchModel = updatedMatch as MatchModel;
+
+    // Invalidate and update cache
+    const playerIds = (matchModel as any).players?.map((p: any) => 
+      p.userId?._id?.toString() || p.userId?.toString()
+    ).filter(Boolean) || [];
+    
+    await matchCache.invalidate(data.matchId, playerIds);
+    // Re-cache the updated match
+    await matchCache.setById(data.matchId, matchModel);
+
     return {
-      match: updatedMatch as MatchModel,
+      match: matchModel,
       isWin,
       isDraw,
     };
@@ -200,7 +241,18 @@ export class MatchService {
       .populate("winner", "username")
       .lean();
 
-    return updatedMatch as MatchModel;
+    const matchModel = updatedMatch as MatchModel;
+
+    // Invalidate and update cache
+    const playerIds = (matchModel as any).players?.map((p: any) => 
+      p.userId?._id?.toString() || p.userId?.toString()
+    ).filter(Boolean) || [];
+    
+    await matchCache.invalidate(matchId, playerIds);
+    // Re-cache the updated match
+    await matchCache.setById(matchId, matchModel);
+
+    return matchModel;
   }
 
   /**
@@ -218,6 +270,13 @@ export class MatchService {
     limit: number = 20,
     skip: number = 0
   ): Promise<MatchModel[]> {
+    // Try to get from cache first
+    const cachedMatches = await matchCache.getUserMatches<MatchModel[]>(userId, limit, skip);
+    if (cachedMatches) {
+      return cachedMatches;
+    }
+
+    // If not in cache, get from database
     const matches = await Match.find({
       "players.userId": new mongoose.Types.ObjectId(userId),
     } as any)
@@ -228,7 +287,12 @@ export class MatchService {
       .skip(skip)
       .lean();
 
-    return matches as MatchModel[];
+    const matchesModel = matches as MatchModel[];
+
+    // Cache the result
+    await matchCache.setUserMatches(userId, limit, skip, matchesModel);
+
+    return matchesModel;
   }
 
   /**

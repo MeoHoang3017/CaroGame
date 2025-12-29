@@ -1,16 +1,52 @@
-export interface ServerToClientEvents {
-  gameStart: (data: { gameId: string; player: 'X' | 'O'; opponent: string }) => void
-  gameMove: (data: { row: number; col: number; player: 'X' | 'O' }) => void
-  gameEnd: (data: { winner: string | null; reason: string }) => void
-  playerJoined: (data: { playerId: string; username: string }) => void
-  playerLeft: (data: { playerId: string }) => void
-  error: (data: { message: string }) => void
+import type { Match, Room } from './api.types'
+
+/**
+ * Socket Event Types
+ * Match với backend socket events
+ */
+
+// Client to Server Events
+export interface ClientToServerEvents {
+  // Room events
+  'room:create': (data: {
+    maxPlayers?: number
+    boardSize?: number
+    isPrivate?: boolean
+    allowSpectators?: boolean
+  }) => void
+  'room:join': (data: { roomCode: string }) => void
+  'room:leave': () => void
+  'room:start': (data: { roomCode: string }) => void
+
+  // Match events
+  'match:join': (data: { matchId: string }) => void
+  'match:leave': () => void
+  'match:move': (data: { matchId: string; x: number; y: number }) => void
+  'match:end': (data: { matchId: string }) => void
 }
 
-export interface ClientToServerEvents {
-  joinGame: (data: { gameId?: string; username: string }) => void
-  makeMove: (data: { gameId: string; row: number; col: number }) => void
-  leaveGame: (data: { gameId: string }) => void
-  requestRematch: (data: { gameId: string }) => void
+// Server to Client Events
+export interface ServerToClientEvents {
+  // Room events
+  'room:created': (data: { room: Room }) => void
+  'room:joined': (data: { room: Room }) => void
+  'room:left': (data: { roomCode: string }) => void
+  'room:updated': (data: { room: Room }) => void
+  'room:started': (data: { room: Room; match: Match }) => void
+
+  // Match events
+  'match:joined': (data: { match: Match }) => void
+  'match:left': (data: { matchId: string }) => void
+  'match:move:made': (data: {
+    match: Match
+    move: { x: number; y: number; playerId: string }
+  }) => void
+  'match:win': (data: { match: Match; winner: string | Match['players'][0] }) => void
+  'match:draw': (data: { match: Match }) => void
+  'match:ended': (data: { match: Match }) => void
+  'match:updated': (data: { match: Match }) => void
+
+  // Error events
+  error: (data: { message: string }) => void
 }
 

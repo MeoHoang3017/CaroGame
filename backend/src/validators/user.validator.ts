@@ -95,6 +95,10 @@ export const userValidator = {
       .isMongoId()
       .withMessage("Invalid user ID format"),
 
+    body("oldPassword")
+      .notEmpty()
+      .withMessage("Old password is required"),
+
     body("newPassword")
       .notEmpty()
       .withMessage("New password is required")

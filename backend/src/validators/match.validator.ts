@@ -17,15 +17,15 @@ export const matchValidator = {
     body("x")
       .notEmpty()
       .withMessage("X coordinate is required")
-      .isInt({ min: 0 })
-      .withMessage("X coordinate must be a non-negative integer")
+      .isInt({ min: 0, max: 19 }) // Board size tối đa là 20 (0-19), có thể điều chỉnh
+      .withMessage("X coordinate must be between 0 and 19")
       .toInt(),
 
     body("y")
       .notEmpty()
       .withMessage("Y coordinate is required")
-      .isInt({ min: 0 })
-      .withMessage("Y coordinate must be a non-negative integer")
+      .isInt({ min: 0, max: 19 }) // Board size tối đa là 20 (0-19), có thể điều chỉnh
+      .withMessage("Y coordinate must be between 0 and 19")
       .toInt(),
   ],
 

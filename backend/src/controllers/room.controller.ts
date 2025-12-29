@@ -192,7 +192,7 @@ export class RoomController {
         return sendResponse(res, response);
       }
 
-      const result = await roomService.startMatch(code);
+      const result = await roomService.startMatch(code, userId);
       const response = SuccessResponse.CUSTOM(200, SYSTEM_MESSAGES.MATCH.CREATE_SUCCESS, result);
       sendResponse(res, response);
     } catch (error: any) {

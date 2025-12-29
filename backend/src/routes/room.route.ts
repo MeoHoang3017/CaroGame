@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { roomController } from "../controllers/room.controller";
 import { authenticateJWT, optionalAuth } from "../middleware/auth.middleware";
+import { validate } from "../middleware/validation.middleware";
+import { roomValidator } from "../validators/room.validator";
 
 const router = Router();
 
@@ -32,7 +34,7 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.post("/create", authenticateJWT, (req, res) => roomController.createRoom(req, res));
+router.post("/create", authenticateJWT, validate(roomValidator.createRoom), (req, res) => roomController.createRoom(req, res));
 
 /**
  * @swagger
@@ -68,7 +70,7 @@ router.post("/create", authenticateJWT, (req, res) => roomController.createRoom(
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.post("/join", authenticateJWT, (req, res) => roomController.joinRoom(req, res));
+router.post("/join", authenticateJWT, validate(roomValidator.joinRoom), (req, res) => roomController.joinRoom(req, res));
 
 /**
  * @swagger
@@ -99,7 +101,7 @@ router.post("/join", authenticateJWT, (req, res) => roomController.joinRoom(req,
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.post("/:code/leave", authenticateJWT, (req, res) => roomController.leaveRoom(req, res));
+router.post("/:code/leave", authenticateJWT, validate(roomValidator.leaveRoom), (req, res) => roomController.leaveRoom(req, res));
 
 /**
  * @swagger
@@ -136,7 +138,7 @@ router.post("/:code/leave", authenticateJWT, (req, res) => roomController.leaveR
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.post("/:code/start", authenticateJWT, (req, res) => roomController.startMatch(req, res));
+router.post("/:code/start", authenticateJWT, validate(roomValidator.startMatch), (req, res) => roomController.startMatch(req, res));
 
 /**
  * @swagger
@@ -167,7 +169,7 @@ router.post("/:code/start", authenticateJWT, (req, res) => roomController.startM
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.get("/:code", optionalAuth, (req, res) => roomController.getRoom(req, res));
+router.get("/:code", optionalAuth, validate(roomValidator.getRoom), (req, res) => roomController.getRoom(req, res));
 
 /**
  * @swagger
@@ -201,7 +203,7 @@ router.get("/:code", optionalAuth, (req, res) => roomController.getRoom(req, res
  *             schema:
  *               $ref: '#/components/schemas/BaseResponse'
  */
-router.get("/", optionalAuth, (req, res) => roomController.getAvailableRooms(req, res));
+router.get("/", optionalAuth, validate(roomValidator.getAvailableRooms), (req, res) => roomController.getAvailableRooms(req, res));
 
 export default router;
 

@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../utils/jwt";
+import { securityLogger } from "../utils/security-logger";
 
 declare global {
   namespace Express {
@@ -26,6 +27,11 @@ export const authenticateJWT = (
     const authHeader = req.headers["authorization"];
 
     if (!authHeader) {
+      // Log unauthorized access attempt
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const userAgent = req.get('user-agent') || 'unknown';
+      securityLogger.logUnauthorizedAccess(undefined, req.path, ip, userAgent);
+      
       res.status(401).json({
         success: false,
         message: "Access token missing",
@@ -36,6 +42,10 @@ export const authenticateJWT = (
     const token = authHeader.split(" ")[1]; // Take the part after "Bearer"
 
     if (!token) {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const userAgent = req.get('user-agent') || 'unknown';
+      securityLogger.logUnauthorizedAccess(undefined, req.path, ip, userAgent);
+      
       res.status(401).json({
         success: false,
         message: "Invalid token format",
@@ -48,13 +58,18 @@ export const authenticateJWT = (
       req.user = user; // Attach decoded user info to the request
       next();
     } catch (error: any) {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const userAgent = req.get('user-agent') || 'unknown';
+      
       if (error.name === "TokenExpiredError") {
+        securityLogger.logUnauthorizedAccess(undefined, req.path, ip, userAgent);
         res.status(401).json({
           success: false,
           message: "Token expired",
         });
         return;
       } else {
+        securityLogger.logUnauthorizedAccess(undefined, req.path, ip, userAgent);
         res.status(403).json({
           success: false,
           message: "Invalid token",
