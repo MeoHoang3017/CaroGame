@@ -15,9 +15,16 @@ import { toast } from '@/utils/toast'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 
 export default function SettingsPage() {
-  const { theme, setTheme } = useTheme()
+  return (
+    <ProtectedRoute>
+      <SettingsContent />
+    </ProtectedRoute>
+  )
+}
+
+function SettingsContent() {
   const [mounted, setMounted] = useState(false)
-  
+  const { theme, setTheme } = useTheme()
   const [settings, setSettings] = useState({
     // Notification settings
     emailNotifications: true,
@@ -68,7 +75,7 @@ export default function SettingsPage() {
 
   // Update theme when settings change
   const updateSetting = (key: string, value: any) => {
-    setSettings({ ...settings, [key]: value })
+    setSettings((prev) => ({ ...prev, [key]: value }))
     // If theme is changed, update immediately
     if (key === 'theme') {
       setTheme(value)
@@ -94,8 +101,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <ProtectedRoute>
-      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <motion.div
@@ -355,7 +361,6 @@ export default function SettingsPage() {
         </motion.div>
       </div>
       </main>
-    </ProtectedRoute>
   )
 }
 

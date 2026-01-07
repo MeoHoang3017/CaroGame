@@ -35,6 +35,13 @@ export const startMatch = async (roomCode: string): Promise<ApiResponse<{ room: 
 }
 
 /**
+ * Reset room for a rematch
+ */
+export const rematchRoom = async (roomCode: string): Promise<ApiResponse<Room>> => {
+  return api.post<Room>(`/rooms/${roomCode}/rematch`, undefined, true)
+}
+
+/**
  * Get room by code
  */
 export const getRoom = async (roomCode: string): Promise<ApiResponse<Room>> => {

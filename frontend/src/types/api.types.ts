@@ -6,7 +6,7 @@
 /**
  * User Types
  */
-export interface User {
+export interface UserModel {
   _id?: string
   id?: string
   username: string

@@ -5,7 +5,6 @@
 
 'use client'
 
-import { useRouter } from 'next/navigation'
 import {
   Dialog,
   DialogContent,
@@ -24,6 +23,10 @@ interface GameEndDialogProps {
   currentUserId: string
   open: boolean
   onClose: () => void
+  onRematch?: () => void
+  rematchLoading?: boolean
+  onBackToHome?: () => void
+  onBackToMatching?: () => void
 }
 
 export function GameEndDialog({
@@ -31,18 +34,19 @@ export function GameEndDialog({
   currentUserId,
   open,
   onClose,
+  onRematch,
+  rematchLoading = false,
+  onBackToHome,
+  onBackToMatching,
 }: GameEndDialogProps) {
-  const router = useRouter()
   const isDraw = isMatchDraw(match)
   const playerWon = didPlayerWin(match, currentUserId)
   const opponent = getOpponent(match, currentUserId)
-
   const handleBackToHome = () => {
-    router.push('/')
+    if (onBackToHome) onBackToHome()
   }
-
   const handleBackToMatching = () => {
-    router.push('/matching')
+    if (onBackToMatching) onBackToMatching()
   }
 
   return (
@@ -80,6 +84,12 @@ export function GameEndDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="flex-col sm:flex-row gap-2">
+          {onRematch && (
+            <Button onClick={onRematch} className="w-full sm:w-auto" disabled={rematchLoading}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {rematchLoading ? 'Setting up...' : 'Rematch'}
+            </Button>
+          )}
           <Button variant="outline" onClick={handleBackToHome} className="w-full sm:w-auto">
             <Home className="h-4 w-4 mr-2" />
             Back to Home

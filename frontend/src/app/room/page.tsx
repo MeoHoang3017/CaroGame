@@ -16,8 +16,16 @@ import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { toast } from '@/utils/toast'
 
 export default function RoomPage() {
-  const searchParams = useSearchParams()
-  const router = useRouter()
+  return (
+    <ProtectedRoute>
+      <RoomContent />
+    </ProtectedRoute>
+  )
+}
+
+function RoomContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const roomCode = searchParams.get('code') || ''
   const [copied, setCopied] = useState(false)
   
@@ -86,20 +94,30 @@ export default function RoomPage() {
       if (response.result?.match) {
         const matchId = response.result.match.id || response.result.match._id
         if (matchId) {
+          toast.success('Match started!')
           router.push(`/game?matchId=${matchId}`)
         }
       }
     } catch (error: any) {
-      alert(error.message || 'Failed to start match')
+      const msg = error.message || 'Failed to start match'
+      toast.error(msg)
     }
   }
 
   const handleLeaveRoom = async () => {
     try {
       await leaveRoomMutation.mutateAsync(roomCode)
+      if (typeof window !== 'undefined') {
+        const storedCode = localStorage.getItem('activeRoomCode')
+        if (storedCode === roomCode) {
+          localStorage.removeItem('activeRoomCode')
+        }
+      }
+      toast.success('Left room')
       router.push('/matching')
     } catch (error: any) {
-      alert(error.message || 'Failed to leave room')
+      const msg = error.message || 'Failed to leave room'
+      toast.error(msg)
     }
   }
 
@@ -111,6 +129,24 @@ export default function RoomPage() {
       router.push('/matching')
     }
   }, [roomCode, router])
+
+  useEffect(() => {
+    if (roomCode && typeof window !== 'undefined') {
+      localStorage.setItem('activeRoomCode', roomCode)
+    }
+  }, [roomCode])
+
+  // Redirect everyone to game when room is in-game and matchId exists
+  useEffect(() => {
+    const matchId =
+      (room as any)?.matchId?._id ||
+      (room as any)?.matchId?.id ||
+      (room as any)?.matchId
+
+    if (room?.status === 'in-game' && matchId) {
+      router.push(`/game?matchId=${matchId}`)
+    }
+  }, [room, router])
   
   // Redirect if room not found
   useEffect(() => {
@@ -122,7 +158,22 @@ export default function RoomPage() {
   }, [roomError, roomLoading, router])
   
   if (!roomCode) {
-    return null
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center p-4">
+        <Card className="max-w-md">
+          <CardContent className="pt-6 text-center space-y-4">
+            <AlertCircle className="h-8 w-8 mx-auto text-warning" />
+            <div>
+              <h2 className="text-xl font-semibold">No Room Code</h2>
+              <p className="text-muted-foreground">Please select or create a room</p>
+            </div>
+            <Button asChild>
+              <Link href="/matching">Find a Room</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    )
   }
   
   if (roomLoading) {

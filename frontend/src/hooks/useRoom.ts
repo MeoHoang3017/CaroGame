@@ -123,3 +123,20 @@ export const useStartMatch = () => {
   })
 }
 
+/**
+ * Hook to reset room for a rematch
+ */
+export const useRematchRoom = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (roomCode: string) => roomService.rematchRoom(roomCode),
+    onSuccess: (response, roomCode) => {
+      if (response.result) {
+        queryClient.setQueryData(['room', roomCode], response)
+        queryClient.invalidateQueries({ queryKey: ['rooms', 'available'] })
+      }
+    },
+  })
+}
+

@@ -89,6 +89,38 @@ export class AuthController {
       sendResponse(res, response);
     }
   }
+
+  /**
+   * Refresh access token
+   * POST /api/auth/refresh
+   */
+  async refresh(req: Request, res: Response): Promise<void> {
+    try {
+      const { refreshToken } = req.body;
+      
+      if (!refreshToken) {
+        const response = ErrorResponse.CUSTOM(400, 'Refresh token is required');
+        sendResponse(res, response);
+        return;
+      }
+
+      const result = await authService.refresh(refreshToken);
+      const response = SuccessResponse.CUSTOM(200, 'Token refreshed successfully', {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+      });
+      sendResponse(res, response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 401;
+      const errorMessage = error.message || 'Failed to refresh token';
+      const response = ErrorResponse.CUSTOM(
+        statusCode,
+        errorMessage,
+        process.env.NODE_ENV === 'development' ? error : undefined
+      );
+      sendResponse(res, response);
+    }
+  }
 }
 
 export const authController = new AuthController();

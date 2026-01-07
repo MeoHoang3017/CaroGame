@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Gamepad2, AlertCircle } from 'lucide-react'
 import { useLogin } from '@/hooks/useAuth'
+import { toast } from '@/utils/toast'
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
@@ -36,8 +37,11 @@ export default function LoginPage() {
         email: formData.email,
         password: formData.password,
       })
+      toast.success('Login successful! Redirecting...')
     } catch (err: any) {
-      setError(err.message || 'Login failed. Please check your credentials.')
+      const errorMessage = err.message || 'Login failed. Please check your credentials.'
+      setError(errorMessage)
+      toast.error(errorMessage)
     }
   }
 

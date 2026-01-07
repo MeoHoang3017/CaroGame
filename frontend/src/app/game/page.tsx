@@ -16,6 +16,7 @@ import { GameStatus } from '@/components/game/GameStatus'
 import { GameEndDialog } from '@/components/game/GameEndDialog'
 import { useMatch, useMakeMove, useEndMatch } from '@/hooks/useMatch'
 import { useJoinMatch, useMatchSocket } from '@/hooks/useGameSocket'
+import { useRematchRoom, useLeaveRoom } from '@/hooks/useRoom'
 import { getStoredUser } from '@/utils/auth'
 import {
   isPlayerTurn,
@@ -29,8 +30,16 @@ import { toast } from '@/utils/toast'
 import type { Match } from '@/types/api.types'
 
 export default function GamePage() {
-  const searchParams = useSearchParams()
-  const router = useRouter()
+  return (
+    <ProtectedRoute>
+      <GameContent />
+    </ProtectedRoute>
+  )
+}
+
+function GameContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const matchId = searchParams.get('matchId')
   const [showEndDialog, setShowEndDialog] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -44,6 +53,8 @@ export default function GamePage() {
   // Mutations
   const makeMoveMutation = useMakeMove()
   const endMatchMutation = useEndMatch()
+  const rematchMutation = useRematchRoom()
+  const leaveRoomMutation = useLeaveRoom()
 
   // Socket integration
   useJoinMatch(matchId)
@@ -77,20 +88,26 @@ export default function GamePage() {
 
     // Check if it's player's turn
     if (!isPlayerTurn(match, userId)) {
-      setError("It's not your turn!")
+      const msg = "It's not your turn!"
+      setError(msg)
+      toast.error(msg)
       return
     }
 
     // Check if match is finished
     if (isMatchFinished(match)) {
-      setError('Match has already ended')
+      const msg = 'Match has already ended'
+      setError(msg)
+      toast.error(msg)
       return
     }
 
     // Validate move (client-side check)
     const board = replayBoardFromHistory(match)
     if (!isValidCell(board, x, y, match.boardSize)) {
-      setError('Invalid move')
+      const msg = 'Invalid move'
+      setError(msg)
+      toast.error(msg)
       return
     }
 
@@ -104,7 +121,7 @@ export default function GamePage() {
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to make move'
       setError(errorMessage)
-      toast.error('Move failed', errorMessage)
+      toast.error(errorMessage)
     }
   }
 
@@ -120,6 +137,39 @@ export default function GamePage() {
       const errorMessage = err.message || 'Failed to end match'
       setError(errorMessage)
       toast.error('Failed to end match', errorMessage)
+    }
+  }
+
+  const handleRematch = async () => {
+    if (!match?.roomCode) return
+    try {
+      const response = await rematchMutation.mutateAsync(match.roomCode)
+      if (response.result) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('activeRoomCode', match.roomCode)
+        }
+        toast.success('Room is ready for a rematch. Returning to room.')
+        router.push(`/room?code=${match.roomCode}`)
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to rematch'
+      toast.error(msg)
+    }
+  }
+
+  const leaveRoomAndNavigate = async (path: string) => {
+    const roomCode = match?.roomCode
+    try {
+      if (roomCode) {
+        await leaveRoomMutation.mutateAsync(roomCode)
+      }
+    } catch (err) {
+      // ignore leave errors to avoid blocking navigation
+    } finally {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('activeRoomCode')
+      }
+      router.push(path)
     }
   }
 
@@ -145,7 +195,22 @@ export default function GamePage() {
   }, [userId, router])
 
   if (!matchId) {
-    return null
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center p-4">
+        <Card className="max-w-md">
+          <CardContent className="pt-6 text-center space-y-4">
+            <AlertCircle className="h-8 w-8 mx-auto text-warning" />
+            <div>
+              <h2 className="text-xl font-semibold">No Match ID</h2>
+              <p className="text-muted-foreground">Please select a match to play</p>
+            </div>
+            <Button asChild>
+              <Link href="/matching">Find a Match</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
+    )
   }
 
   if (isLoading) {
@@ -290,6 +355,10 @@ export default function GamePage() {
           currentUserId={userId}
           open={showEndDialog}
           onClose={() => setShowEndDialog(false)}
+          onRematch={handleRematch}
+          rematchLoading={rematchMutation.isPending}
+          onBackToHome={() => leaveRoomAndNavigate('/')}
+          onBackToMatching={() => leaveRoomAndNavigate('/matching')}
         />
       )}
     </main>

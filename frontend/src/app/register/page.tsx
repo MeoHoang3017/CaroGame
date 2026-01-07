@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Gamepad2, AlertCircle } from 'lucide-react'
 import { useRegister } from '@/hooks/useAuth'
+import { toast } from '@/utils/toast'
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -35,12 +36,16 @@ export default function RegisterPage() {
 
     // Basic validation
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match!')
+      const msg = 'Passwords do not match!'
+      setError(msg)
+      toast.error(msg)
       return
     }
 
     if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long')
+      const msg = 'Password must be at least 6 characters long'
+      setError(msg)
+      toast.error(msg)
       return
     }
 
@@ -50,8 +55,11 @@ export default function RegisterPage() {
         email: formData.email,
         password: formData.password,
       })
+      toast.success('Registration successful! Redirecting to login...')
     } catch (err: any) {
-      setError(err.message || 'Registration failed. Please try again.')
+      const errorMessage = err.message || 'Registration failed. Please try again.'
+      setError(errorMessage)
+      toast.error(errorMessage)
     }
   }
 

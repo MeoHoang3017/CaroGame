@@ -2,7 +2,6 @@
  * Room Service
  * @description Handles room operations: create, join, leave, start match
  */
-
 import Room from "../models/room.model";
 import { matchService } from "./match.service";
 import type {
@@ -16,10 +15,33 @@ import { createError } from "../middleware/error.middleware";
 import mongoose from "mongoose";
 
 export class RoomService {
+
+  private async findActiveRoomByUser(userId: string) {
+    return await Room.findOne({
+      players: {
+        $elemMatch: { userId: new mongoose.Types.ObjectId(userId) },
+      },
+      status: { $in: ["waiting", "starting", "in-game"] },
+      expiresAt: { $gt: new Date() },
+    }).lean() as RoomModel | null;
+  }
+
   /**
    * Tạo room mới
    */
   async createRoom(data: CreateRoomData): Promise<RoomModel> {
+    //Xử lý việc room mà cả 2 user đang chơi game không thể tạo room mới
+    const existing = await this.findActiveRoomByUser(data.hostId);
+    if (existing) {
+      const existingUser = existing.players.find((player: any) => player.userId.toString() === data.hostId);
+      if (existingUser) {
+        throw createError(
+          `User already in room ${existing.roomCode}. Leave current room before creating a new one.`,
+          400
+        );
+      }
+    }
+
     const maxRetries = 10;
     let attempts = 0;
 
@@ -69,15 +91,26 @@ export class RoomService {
    * Sử dụng atomic operation để tránh race condition
    */
   async joinRoom(data: JoinRoomData): Promise<RoomModel> {
+    // Nếu user đang ở room khác (waiting/starting/in-game), không cho join room mới
+    const existing = await this.findActiveRoomByUser(data.userId);
+    if (existing && existing.roomCode !== data.roomCode) {
+      throw createError(
+        `User already in room ${existing.roomCode}. Leave current room before joining another.`,
+        400
+      );
+    }
+
     // Sử dụng findOneAndUpdate với atomic operation để tránh race condition
-    const updatedRoom = await Room.findOneAndUpdate(
-      {
-        roomCode: data.roomCode,
-        status: "waiting",
-        expiresAt: { $gt: new Date() }, // Chỉ lấy rooms chưa expire
-        $expr: { $lt: [{ $size: "$players" }, "$maxPlayers"] }, // Chỉ update nếu chưa đủ người
-        "players.userId": { $ne: new mongoose.Types.ObjectId(data.userId) } // Chưa tham gia
-      },
+    const joinFilter: any = {
+      roomCode: data.roomCode,
+      status: "waiting",
+      expiresAt: { $gt: new Date() }, // Chỉ lấy rooms chưa expire
+      $expr: { $lt: [{ $size: "$players" }, "$maxPlayers"] }, // Chỉ update nếu chưa đủ người
+      "players.userId": { $ne: new mongoose.Types.ObjectId(data.userId) }, // Chưa tham gia
+    };
+
+    const updatedRoom = await (Room as any).findOneAndUpdate(
+      joinFilter,
       {
         $addToSet: {
           players: {
@@ -191,68 +224,149 @@ export class RoomService {
     session.startTransaction();
 
     try {
-      const room = await Room.findOne({ roomCode })
-        .populate("players.userId", "username email")
-        .session(session) as RoomDocument | null;
-
-      if (!room) {
-        await session.abortTransaction();
-        throw createError("Room not found", 404);
-      }
-
-      // Kiểm tra user có phải là host không
-      if ((room as any).hostId.toString() !== userId) {
-        await session.abortTransaction();
-        throw createError("Only room host can start the match", 403);
-      }
-
-      if ((room as any).status !== "starting" && (room as any).players.length < (room as any).maxPlayers) {
-        await session.abortTransaction();
-        throw createError("Room is not ready to start", 400);
-      }
-
-      if ((room as any).matchId) {
-        await session.abortTransaction();
-        throw createError("Match already started", 400);
-      }
-
-      // Tạo match từ room
-      const players = (room as any).players.map((p: any, index: number) => ({
-        userId: p.userId.toString(),
-        symbol: index === 0 ? "X" : "O", // Người đầu tiên là X
-        color: index === 0 ? "#FF0000" : "#0000FF", // Màu mặc định
-      }));
-
-      const match = await matchService.createMatch({
-        players,
-        boardSize: (room as any).boardSize,
-        roomCode: (room as any).roomCode,
-      }, session);
-
-      // Cập nhật room trong transaction
-      (room as any).matchId = new mongoose.Types.ObjectId(match._id);
-      (room as any).status = "in-game";
-      await room.save({ session });
-
-      // Commit transaction
+      const result = await this.startMatchWithSession(roomCode, userId, session);
       await session.commitTransaction();
-
-      const updatedRoom = await Room.findById((room as any)._id)
-        .populate("hostId", "username email")
-        .populate("players.userId", "username email")
-        .populate("matchId")
-        .lean();
-
-      return {
-        room: updatedRoom as RoomModel,
-        match,
-      };
+      return result;
     } catch (error: any) {
+      // Fallback for standalone MongoDB (no replica set) that doesn't support transactions
+      const isTxNotSupported =
+        error?.code === 20 ||
+        (typeof error?.message === "string" &&
+          error.message.includes("Transaction numbers are only allowed"));
+
+      if (isTxNotSupported) {
+        // Use non-transactional path as a graceful fallback
+        return await this.startMatchWithoutTransaction(roomCode, userId);
+      }
+
       await session.abortTransaction();
       throw error;
     } finally {
       session.endSession();
     }
+  }
+
+  /**
+   * Core start match logic using provided session (transactional path)
+   */
+  private async startMatchWithSession(
+    roomCode: string,
+    userId: string,
+    session: mongoose.ClientSession
+  ): Promise<{ room: RoomModel; match: any }> {
+    const room = await Room.findOne({ roomCode })
+      .populate("players.userId", "username email")
+      .session(session) as RoomDocument | null;
+
+    if (!room) {
+      await session.abortTransaction();
+      throw createError("Room not found", 404);
+    }
+
+    // Kiểm tra user có phải là host không
+    if ((room as any).hostId.toString() !== userId) {
+      await session.abortTransaction();
+      throw createError("Only room host can start the match", 403);
+    }
+
+    if ((room as any).status !== "starting" && (room as any).players.length < (room as any).maxPlayers) {
+      await session.abortTransaction();
+      throw createError("Room is not ready to start", 400);
+    }
+
+    if ((room as any).matchId) {
+      await session.abortTransaction();
+      throw createError("Match already started", 400);
+    }
+
+    const players = (room as any).players.map((p: any, index: number) => ({
+      userId:
+        typeof p.userId === "string"
+          ? p.userId
+          : p.userId?._id?.toString() || p.userId?.id?.toString(),
+      symbol: index === 0 ? "X" : "O", // Người đầu tiên là X
+      color: index === 0 ? "#FF0000" : "#0000FF", // Màu mặc định
+    }));
+
+    const match = await matchService.createMatch({
+      players,
+      boardSize: (room as any).boardSize,
+      roomCode: (room as any).roomCode,
+    }, session);
+
+    // Cập nhật room trong transaction
+    (room as any).matchId = new mongoose.Types.ObjectId(match._id);
+    (room as any).status = "in-game";
+    await room.save({ session });
+
+    const updatedRoom = await Room.findById((room as any)._id)
+      .populate("hostId", "username email")
+      .populate("players.userId", "username email")
+      .populate("matchId")
+      .lean();
+
+    return {
+      room: updatedRoom as RoomModel,
+      match,
+    };
+  }
+
+  /**
+   * Fallback start match when MongoDB doesn't support transactions (standalone)
+   * Still enforces the same checks but without a session/transaction.
+   */
+  private async startMatchWithoutTransaction(
+    roomCode: string,
+    userId: string
+  ): Promise<{ room: RoomModel; match: any }> {
+    const room = await Room.findOne({ roomCode })
+      .populate("players.userId", "username email") as RoomDocument | null;
+
+    if (!room) {
+      throw createError("Room not found", 404);
+    }
+
+    if ((room as any).hostId.toString() !== userId) {
+      throw createError("Only room host can start the match", 403);
+    }
+
+    if ((room as any).status !== "starting" && (room as any).players.length < (room as any).maxPlayers) {
+      throw createError("Room is not ready to start", 400);
+    }
+
+    if ((room as any).matchId) {
+      throw createError("Match already started", 400);
+    }
+
+    const players = (room as any).players.map((p: any, index: number) => ({
+      userId:
+        typeof p.userId === "string"
+          ? p.userId
+          : p.userId?._id?.toString() || p.userId?.id?.toString(),
+      symbol: index === 0 ? "X" : "O",
+      color: index === 0 ? "#FF0000" : "#0000FF",
+    }));
+
+    const match = await matchService.createMatch({
+      players,
+      boardSize: (room as any).boardSize,
+      roomCode: (room as any).roomCode,
+    });
+
+    (room as any).matchId = new mongoose.Types.ObjectId(match._id);
+    (room as any).status = "in-game";
+    await room.save();
+
+    const updatedRoom = await Room.findById((room as any)._id)
+      .populate("hostId", "username email")
+      .populate("players.userId", "username email")
+      .populate("matchId")
+      .lean();
+
+    return {
+      room: updatedRoom as RoomModel,
+      match,
+    };
   }
 
   /**
@@ -293,6 +407,47 @@ export class RoomService {
       .lean();
 
     return rooms as RoomModel[];
+  }
+
+  /**
+   * Reset room for a rematch (clear matchId, set status back to waiting/starting)
+   */
+  async rematch(roomCode: string, userId: string): Promise<RoomModel> {
+    const room = await Room.findOne({ roomCode })
+      .populate("players.userId", "username email") as RoomDocument | null;
+
+    if (!room) {
+      throw createError("Room not found", 404);
+    }
+
+    // Only host can trigger rematch
+    if ((room as any).hostId.toString() !== userId) {
+      throw createError("Only room host can start a rematch", 403);
+    }
+
+    // If match exists and still ongoing, block rematch
+    if ((room as any).matchId) {
+      const match = await matchService.getMatch((room as any).matchId.toString());
+      if (match && match.result === "ongoing") {
+        throw createError("Match is still in progress", 400);
+      }
+    }
+
+    (room as any).matchId = null;
+    // If room still has enough players, set to starting, otherwise waiting
+    (room as any).status =
+      (room as any).players.length >= (room as any).maxPlayers ? "starting" : "waiting";
+    // Extend expiration
+    (room as any).expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await room.save();
+
+    const updatedRoom = await Room.findById((room as any)._id)
+      .populate("hostId", "username email")
+      .populate("players.userId", "username email")
+      .populate("matchId")
+      .lean();
+
+    return updatedRoom as RoomModel;
   }
 
   /**

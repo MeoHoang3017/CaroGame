@@ -85,5 +85,57 @@ router.post(
   }
 );
 
+/**
+ * @swagger
+ * /api/auth/refresh:
+ *   post:
+ *     summary: Refresh access token
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refreshToken
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *                 description: The refresh token from previous login/register
+ *     responses:
+ *       200:
+ *         description: Token refreshed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: number
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: "Token refreshed successfully"
+ *                 result:
+ *                   type: object
+ *                   properties:
+ *                     accessToken:
+ *                       type: string
+ *                     refreshToken:
+ *                       type: string
+ *       400:
+ *         description: Refresh token is missing
+ *       401:
+ *         description: Invalid or expired refresh token
+ */
+router.post(
+  "/refresh",
+  authLimiter, // Rate limiting cho auth endpoints
+  (req, res) => {
+    authController.refresh(req, res);
+  }
+);
+
 export default router;
 

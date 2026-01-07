@@ -141,6 +141,12 @@ router.post("/:code/leave", authenticateJWT, validate(roomValidator.leaveRoom), 
 router.post("/:code/start", authenticateJWT, validate(roomValidator.startMatch), (req, res) => roomController.startMatch(req, res));
 
 /**
+ * Rematch in a room (reset room to start a new match)
+ * POST /api/rooms/:code/rematch
+ */
+router.post("/:code/rematch", authenticateJWT, validate(roomValidator.startMatch), (req, res) => roomController.rematch(req, res));
+
+/**
  * @swagger
  * /api/rooms/{code}:
  *   get:

@@ -39,7 +39,7 @@ export const corsOptions: cors.CorsOptions = {
  */
 export const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 phút
-  max: 100, // Giới hạn 100 requests per IP trong 15 phút
+  max: 200, // Giới hạn 200 requests per IP trong 15 phút
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.',
@@ -88,7 +88,7 @@ export const authLimiter = rateLimit({
  */
 export const userLookupLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 phút
-  max: 20, // Giới hạn 20 requests per IP trong 15 phút
+  max: 200, // Giới hạn 200 requests per IP trong 15 phút
   message: {
     success: false,
     message: 'Too many lookup requests, please try again later.',

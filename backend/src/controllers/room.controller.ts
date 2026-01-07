@@ -205,6 +205,39 @@ export class RoomController {
       sendResponse(res, response);
     }
   }
+
+  /**
+   * Rematch (reset room to start a new match)
+   * POST /api/rooms/:code/rematch
+   */
+  async rematch(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const { code } = req.params;
+
+      if (!userId) {
+        const response = ErrorResponse.UNAUTHORIZED;
+        return sendResponse(res, response);
+      }
+
+      if (!code) {
+        const response = ErrorResponse.MISSING_FIELDS(["code"]);
+        return sendResponse(res, response);
+      }
+
+      const room = await roomService.rematch(code, userId);
+      const response = SuccessResponse.CUSTOM(200, "Room reset for rematch", room);
+      sendResponse(res, response);
+    } catch (error: any) {
+      const statusCode = error.statusCode || 500;
+      const response = ErrorResponse.CUSTOM(
+        statusCode,
+        error.message || "Failed to reset room for rematch",
+        error
+      );
+      sendResponse(res, response);
+    }
+  }
 }
 
 export const roomController = new RoomController();

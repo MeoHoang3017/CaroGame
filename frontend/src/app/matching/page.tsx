@@ -18,6 +18,14 @@ import { toast } from '@/utils/toast'
 import Link from 'next/link'
 
 export default function MatchingPage() {
+  return (
+    <ProtectedRoute>
+      <MatchingContent />
+    </ProtectedRoute>
+  )
+}
+
+function MatchingContent() {
   const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -40,6 +48,21 @@ export default function MatchingPage() {
   // Join room mutation
   const joinRoomMutation = useJoinRoom()
 
+  const getActiveRoomCode = () => {
+    if (typeof window === 'undefined') return ''
+    return localStorage.getItem('activeRoomCode') || ''
+  }
+
+  const setActiveRoomCode = (code: string) => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem('activeRoomCode', code)
+  }
+
+  const clearActiveRoomCode = () => {
+    if (typeof window === 'undefined') return
+    localStorage.removeItem('activeRoomCode')
+  }
+
   const handleCreateRoom = async () => {
     try {
       const response = await createRoomMutation.mutateAsync({
@@ -51,12 +74,15 @@ export default function MatchingPage() {
       
       if (response.result) {
         const newRoomCode = response.result.roomCode
+        setActiveRoomCode(newRoomCode)
         setRoomCode(newRoomCode)
         setShowCreateDialog(false)
+        toast.success('Room created successfully!')
         router.push(`/room?code=${newRoomCode}`)
       }
-    } catch (error) {
-      console.error('Failed to create room:', error)
+    } catch (error: any) {
+      const msg = error.message || 'Failed to create room'
+      toast.error(msg)
     }
   }
 
@@ -64,10 +90,17 @@ export default function MatchingPage() {
     try {
       const response = await joinRoomMutation.mutateAsync({ roomCode: code })
       if (response.result) {
+        setActiveRoomCode(code)
+        toast.success('Joined room!')
         router.push(`/room?code=${code}`)
       }
     } catch (error: any) {
-      alert(error.message || 'Failed to join room')
+      const msg = error.message || 'Failed to join room'
+      // Nếu phòng cũ đã không tồn tại/expired, bỏ chặn để user thử lại
+      if (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('expired')) {
+        clearActiveRoomCode()
+      }
+      toast.error(msg)
     }
   }
 

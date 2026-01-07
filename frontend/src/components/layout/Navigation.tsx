@@ -18,23 +18,50 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Gamepad2, User, Settings, LogOut, Menu, X } from 'lucide-react'
+import { Gamepad2, User as UserIcon, Settings, LogOut, Menu, X } from 'lucide-react'
 import { getStoredUser, clearUser } from '@/utils/auth'
 import { useLogout } from '@/hooks/useAuth'
+import { useLeaveRoom } from '@/hooks/useRoom'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
-import type { User } from '@/types/api.types'
+import type { User as ApiUser } from '@/types/api.types'
 
 export function Navigation() {
   const router = useRouter()
   const pathname = usePathname()
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<ApiUser | null>(null)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [hasRedirectedToRoom, setHasRedirectedToRoom] = useState(false)
   const logoutMutation = useLogout()
+  const leaveRoomMutation = useLeaveRoom()
 
   useEffect(() => {
     const storedUser = getStoredUser()
     setUser(storedUser)
   }, [])
+
+  // If user has an active room and navigates away from room/game, treat it as leaving the room
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const activeRoomCode = localStorage.getItem('activeRoomCode')
+    if (!activeRoomCode) return
+
+    const isRoomPage = pathname?.startsWith('/room')
+    const isGamePage = pathname?.startsWith('/game')
+    // If not on room/game and we haven't redirected yet, bring the user back to their active room
+    if (!isRoomPage && !isGamePage && !hasRedirectedToRoom) {
+      setHasRedirectedToRoom(true)
+      router.replace(`/room?code=${activeRoomCode}`)
+      return
+    }
+
+    if (isRoomPage || isGamePage) return
+
+    leaveRoomMutation.mutate(activeRoomCode, {
+      onSettled: () => {
+        localStorage.removeItem('activeRoomCode')
+      },
+    })
+  }, [pathname, leaveRoomMutation, hasRedirectedToRoom, router])
 
   const handleLogout = async () => {
     try {
@@ -89,12 +116,20 @@ export function Navigation() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                      {/*
+                        Avatar is not part of User type; read loosely from stored user.
+                      */}
+                      {(() => {
+                        const avatar = (user as any)?.avatar
+                        return (
                       <Avatar className="h-10 w-10">
-                        <AvatarImage src={user?.avatar} alt={user?.username} />
+                        <AvatarImage src={avatar} alt={user?.username} />
                         <AvatarFallback>
                           {user?.username?.charAt(0).toUpperCase() || 'U'}
                         </AvatarFallback>
                       </Avatar>
+                        )
+                      })()}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
@@ -111,7 +146,7 @@ export function Navigation() {
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
                       <Link href="/profile" className="flex items-center">
-                        <User className="mr-2 h-4 w-4" />
+                        <UserIcon className="mr-2 h-4 w-4" />
                         Profile
                       </Link>
                     </DropdownMenuItem>
@@ -189,12 +224,17 @@ export function Navigation() {
                   <ThemeToggle />
                 </div>
                 <div className="flex items-center gap-2 px-4 py-2">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={user?.avatar} alt={user?.username} />
-                    <AvatarFallback>
-                      {user?.username?.charAt(0).toUpperCase() || 'U'}
-                    </AvatarFallback>
-                  </Avatar>
+                  {(() => {
+                    const avatar = (user as any)?.avatar
+                    return (
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={avatar} alt={user?.username} />
+                        <AvatarFallback>
+                          {user?.username?.charAt(0).toUpperCase() || 'U'}
+                        </AvatarFallback>
+                      </Avatar>
+                    )
+                  })()}
                   <div className="flex-1">
                     <p className="text-sm font-medium">{user?.username || 'User'}</p>
                     <p className="text-xs text-muted-foreground">{user?.email}</p>

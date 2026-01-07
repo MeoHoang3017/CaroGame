@@ -60,6 +60,41 @@ export class AuthService {
     async logout(userId: string) {
       await User.findByIdAndUpdate(userId, { lastLogin: new Date() });
     }
+
+    /**
+     * Nghiệp vụ Làm mới Token
+     */
+    async refresh(refreshToken: string) {
+      try {
+        // Verify và decrypt refresh token
+        const payload = JWT.verifyRefreshToken(refreshToken);
+        
+        // Lấy user từ database
+        const user = await User.findById(payload.id);
+        if (!user) {
+          const error = new Error('User not found');
+          (error as any).statusCode = 401;
+          throw error;
+        }
+
+        // Generate new tokens
+        const newPayload = { 
+          id: user._id.toString(), 
+          isGuest: user.isGuest 
+        };
+        
+        return {
+          accessToken: JWT.generateAccessToken(newPayload),
+          refreshToken: JWT.generateRefreshToken(newPayload)
+        };
+      } catch (error: any) {
+        const statusCode = error.statusCode || 401;
+        const message = error.message || 'Invalid refresh token';
+        const err = new Error(message);
+        (err as any).statusCode = statusCode;
+        throw err;
+      }
+    }
   }
   
   export const authService = new AuthService();
